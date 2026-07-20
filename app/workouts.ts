@@ -35,7 +35,7 @@ export const workouts: Workout[] = [
         body: "大腿、臀",
         sets: 3,
         reps: "5-8 次",
-        gif: "/gifs/0043-qXTaZnJ.gif",
+        gif: "gifs/0043-qXTaZnJ.gif",
         tip: "膝盖与脚尖方向一致，躯干保持稳定。",
       },
       {
@@ -44,7 +44,7 @@ export const workouts: Workout[] = [
         body: "胸、肱三头肌",
         sets: 3,
         reps: "6-10 次",
-        gif: "/gifs/0025-EIeI8Vf.gif",
+        gif: "gifs/0025-EIeI8Vf.gif",
         tip: "肩胛后缩下沉，双脚稳定踩地。",
       },
       {
@@ -53,7 +53,7 @@ export const workouts: Workout[] = [
         body: "上背、肱二头肌",
         sets: 3,
         reps: "8-12 次",
-        gif: "/gifs/0861-fUBheHs.gif",
+        gif: "gifs/0861-fUBheHs.gif",
         tip: "先收肩胛，再把手柄拉向腹部。",
       },
       {
@@ -62,7 +62,7 @@ export const workouts: Workout[] = [
         body: "肩中束",
         sets: 2,
         reps: "12-15 次",
-        gif: "/gifs/0334-DsgkuIt.gif",
+        gif: "gifs/0334-DsgkuIt.gif",
         tip: "用肩带动手臂，避免耸肩和借力。",
       },
       {
@@ -71,7 +71,7 @@ export const workouts: Workout[] = [
         body: "核心",
         sets: 2,
         reps: "10-15 次",
-        gif: "/gifs/0175-WW95auq.gif",
+        gif: "gifs/0175-WW95auq.gif",
         tip: "让胸骨靠近骨盆，不要只低头。",
       },
       {
@@ -80,7 +80,7 @@ export const workouts: Workout[] = [
         body: "小腿",
         sets: 2,
         reps: "12-20 次",
-        gif: "/gifs/1372-8ozhUIZ.gif",
+        gif: "gifs/1372-8ozhUIZ.gif",
         tip: "顶端停顿，下降到脚跟充分伸展。",
       },
     ],
@@ -99,7 +99,7 @@ export const workouts: Workout[] = [
         body: "臀、腿后侧",
         sets: 3,
         reps: "6-10 次",
-        gif: "/gifs/0085-wQ2c4XD.gif",
+        gif: "gifs/0085-wQ2c4XD.gif",
         tip: "髋部向后推，杠铃始终贴近腿部。",
       },
       {
@@ -108,7 +108,7 @@ export const workouts: Workout[] = [
         body: "背阔肌、肱二头肌",
         sets: 3,
         reps: "8-12 次",
-        gif: "/gifs/2330-LEprlgG.gif",
+        gif: "gifs/2330-LEprlgG.gif",
         tip: "胸口微抬，把肘向身体两侧下压。",
       },
       {
@@ -117,7 +117,7 @@ export const workouts: Workout[] = [
         body: "肩、肱三头肌",
         sets: 3,
         reps: "8-12 次",
-        gif: "/gifs/0405-znQUdHY.gif",
+        gif: "gifs/0405-znQUdHY.gif",
         tip: "收紧核心，避免腰部过度反弓。",
       },
       {
@@ -126,7 +126,7 @@ export const workouts: Workout[] = [
         body: "大腿、臀",
         sets: 2,
         reps: "每侧 8-12 次",
-        gif: "/gifs/0381-SSsBDwB.gif",
+        gif: "gifs/0381-SSsBDwB.gif",
         tip: "后撤距离适中，前脚全脚掌发力。",
       },
       {
@@ -135,7 +135,7 @@ export const workouts: Workout[] = [
         body: "肱二头肌",
         sets: 2,
         reps: "10-15 次",
-        gif: "/gifs/0031-25GPyDY.gif",
+        gif: "gifs/0031-25GPyDY.gif",
         tip: "肘部固定，避免身体前后摆动。",
       },
       {
@@ -144,7 +144,7 @@ export const workouts: Workout[] = [
         body: "肱三头肌",
         sets: 2,
         reps: "10-15 次",
-        gif: "/gifs/0241-gAwDzB3.gif",
+        gif: "gifs/0241-gAwDzB3.gif",
         tip: "大臂贴近身体，底端完全伸直手肘。",
       },
     ],
@@ -163,7 +163,7 @@ export const workouts: Workout[] = [
         body: "大腿、臀",
         sets: 3,
         reps: "10-15 次",
-        gif: "/gifs/0739-10Z2DXU.gif",
+        gif: "gifs/0739-10Z2DXU.gif",
         tip: "腰背贴住靠垫，膝盖不要内扣。",
       },
       {
@@ -172,7 +172,7 @@ export const workouts: Workout[] = [
         body: "胸、肱三头肌",
         sets: 3,
         reps: "8-12 次",
-        gif: "/gifs/0314-ns0SIbU.gif",
+        gif: "gifs/0314-ns0SIbU.gif",
         tip: "凳面角度保持较低，控制哑铃下降。",
       },
       {
@@ -181,7 +181,7 @@ export const workouts: Workout[] = [
         body: "上背、肱二头肌",
         sets: 3,
         reps: "8-12 次",
-        gif: "/gifs/0180-hvV79Si.gif",
+        gif: "gifs/0180-hvV79Si.gif",
         tip: "保持胸口稳定，不要用腰部后仰借力。",
       },
       {
@@ -190,7 +190,7 @@ export const workouts: Workout[] = [
         body: "腿后侧",
         sets: 3,
         reps: "10-15 次",
-        gif: "/gifs/0586-17lJ1kr.gif",
+        gif: "gifs/0586-17lJ1kr.gif",
         tip: "髋部贴紧垫面，动作全程保持控制。",
       },
       {
@@ -199,7 +199,7 @@ export const workouts: Workout[] = [
         body: "肩后束、上背",
         sets: 2,
         reps: "12-15 次",
-        gif: "/gifs/0380-v1qBec9.gif",
+        gif: "gifs/0380-v1qBec9.gif",
         tip: "俯身后固定躯干，让肩后束主动发力。",
       },
       {
@@ -208,7 +208,7 @@ export const workouts: Workout[] = [
         body: "小腿",
         sets: 2,
         reps: "12-20 次",
-        gif: "/gifs/1391-ykHcWme.gif",
+        gif: "gifs/1391-ykHcWme.gif",
         tip: "只移动脚踝，膝盖保持稳定。",
       },
       {
@@ -217,7 +217,7 @@ export const workouts: Workout[] = [
         body: "心肺、核心",
         sets: 3,
         reps: "20-40 秒",
-        gif: "/gifs/0630-RJgzwny.gif",
+        gif: "gifs/0630-RJgzwny.gif",
         tip: "肩膀位于手腕上方，骨盆不要上下晃动。",
         isTimed: true,
       },
@@ -247,7 +247,7 @@ export const workouts: Workout[] = [
         body: "核心",
         sets: 3,
         reps: "每侧 8-12 次",
-        gif: "/gifs/0276-iny3m5y.gif",
+        gif: "gifs/0276-iny3m5y.gif",
         tip: "下背贴地，四肢缓慢伸展。",
       },
       {
@@ -256,7 +256,7 @@ export const workouts: Workout[] = [
         body: "核心",
         sets: 3,
         reps: "10-15 次",
-        gif: "/gifs/0872-nCU1Ekp.gif",
+        gif: "gifs/0872-nCU1Ekp.gif",
         tip: "用腹部卷起骨盆，不要甩腿。",
       },
       {
@@ -265,7 +265,7 @@ export const workouts: Workout[] = [
         body: "全身活动度",
         sets: 2,
         reps: "10-12 次",
-        gif: "/gifs/1685-QChZi3x.gif",
+        gif: "gifs/1685-QChZi3x.gif",
         tip: "保持动作流畅，以打开髋部和肩部为主。",
       },
       {
@@ -274,10 +274,9 @@ export const workouts: Workout[] = [
         body: "核心、肩",
         sets: 3,
         reps: "每侧 10-16 次",
-        gif: "/gifs/3699-yRpV5TC.gif",
+        gif: "gifs/3699-yRpV5TC.gif",
         tip: "双脚稍分开，尽量减少骨盆旋转。",
       },
     ],
   },
 ];
-

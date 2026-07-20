@@ -688,7 +688,7 @@ function InstallSheet({
           <X size={22} />
         </IconButton>
         <div className="app-icon">
-          <img src="/icon-512.png" alt="" width={72} height={72} />
+          <img src="icon-512.png" alt="" width={72} height={72} />
         </div>
         <h2 id="install-title">把稳练放到主屏幕</h2>
         {deferredPrompt ? (
@@ -744,7 +744,7 @@ export default function FitnessApp() {
     }
 
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+      navigator.serviceWorker.register("./sw.js").catch(() => undefined);
     }
 
     const handleInstall = (event: Event) => {
@@ -944,4 +944,3 @@ export default function FitnessApp() {
     </div>
   );
 }
-
