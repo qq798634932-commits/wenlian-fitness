@@ -2,27 +2,65 @@
 
 import {
   ArrowRight,
+  ArrowSquareOut,
   Barbell,
   CalendarDots,
   CaretLeft,
   ChartBar,
   CheckCircle,
   DownloadSimple,
+  Headphones,
   House,
   ListChecks,
   Minus,
+  MusicNotes,
   Notebook,
+  Pause,
+  Play,
   Plus,
   ShareNetwork,
+  SkipForward,
   Timer,
+  Trash,
   UploadSimple,
   Warning,
   X,
 } from "@phosphor-icons/react";
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  MusicPlatform,
+  neteasePlayerUrl,
+  normalizeQQMusicUrl,
+  parseNeteasePlaylistId,
+} from "./music-links";
+import {
+  listStoredAudioTracks,
+  removeStoredAudioTrack,
+  saveAudioFiles,
+  StoredAudioTrack,
+} from "./music-storage";
 import { Exercise, Workout, workouts } from "./workouts";
 
-type Tab = "today" | "plan" | "records";
+type Tab = "today" | "plan" | "music" | "records";
+
+type MusicSource = "all" | MusicPlatform;
+
+type MusicPlaylist = {
+  id: MusicPlatform;
+  platform: string;
+  title: string;
+  description: string;
+  trackCount: string;
+  firstTrack: string;
+  artist: string;
+  capability: string;
+  actionLabel: string;
+};
+
+type MusicConnections = {
+  netease?: { playlistId: string; title: string };
+  qq?: { url: string; title: string };
+};
 
 type ExerciseEntry = {
   completedSets: number;
@@ -51,7 +89,54 @@ type DeferredInstallPrompt = Event & {
 };
 
 const STORAGE_KEY = "wenlian-records-v1";
+const MUSIC_CONNECTIONS_KEY = "wenlian-music-connections-v1";
 const BACKUP_VERSION = 1;
+
+function createMusicPlaylists(
+  connections: MusicConnections,
+  localTracks: StoredAudioTrack[],
+  activeTrack: StoredAudioTrack | null,
+): MusicPlaylist[] {
+  return [
+    {
+      id: "netease",
+      platform: "网易云音乐",
+      title: connections.netease?.title || "连接训练歌单",
+      description: connections.netease
+        ? "使用网易云官方外链播放器，可直接在当前页面选歌。"
+        : "粘贴网易云歌单链接或数字 ID，在页面内打开官方播放器。",
+      trackCount: connections.netease ? "已连接" : "等待添加",
+      firstTrack: connections.netease?.title || "网易云官方播放器",
+      artist: "网易云音乐",
+      capability: "页面内播放",
+      actionLabel: connections.netease ? "打开播放器" : "连接歌单",
+    },
+    {
+      id: "qq",
+      platform: "QQ 音乐",
+      title: connections.qq?.title || "连接训练歌单",
+      description: connections.qq
+        ? "通过 QQ 音乐官方页面或 App 播放，不读取账号 Cookie。"
+        : "粘贴 QQ 音乐歌单分享链接，训练时从官方页面打开。",
+      trackCount: connections.qq ? "已连接" : "等待添加",
+      firstTrack: connections.qq?.title || "QQ 音乐官方歌单",
+      artist: "QQ 音乐",
+      capability: "官方跳转",
+      actionLabel: connections.qq ? "用 QQ 音乐打开" : "连接歌单",
+    },
+    {
+      id: "local",
+      platform: "本地音频",
+      title: "离线训练音乐",
+      description: "从 iPhone 文件或 Obsidian 导出音频，只保存在当前设备。",
+      trackCount: localTracks.length ? `${localTracks.length} 首已保存` : "还没有音频",
+      firstTrack: activeTrack?.name || localTracks[0]?.name || "选择本地音频",
+      artist: "本机离线音乐",
+      capability: "离线播放",
+      actionLabel: localTracks.length ? "查看音频" : "导入音频",
+    },
+  ];
+}
 
 function pad(value: number) {
   return String(value).padStart(2, "0");
@@ -660,6 +745,395 @@ function RecordsView({
   );
 }
 
+function MusicCover({ source, compact = false }: { source: MusicPlatform; compact?: boolean }) {
+  return (
+    <div
+      className={`music-cover ${compact ? "is-compact" : ""}`}
+      data-source={source}
+      role="img"
+      aria-label={`${source} 音乐来源图标`}
+    >
+      <MusicNotes size={compact ? 20 : 34} weight="fill" />
+    </div>
+  );
+}
+
+function MusicView({
+  playlists,
+  currentPlaylistId,
+  connections,
+  localTracks,
+  activeTrack,
+  isPlaying,
+  currentTime,
+  duration,
+  onTogglePlay,
+  onSelectPlaylist,
+  onAddPlaylist,
+  onSelectTrack,
+  onSeek,
+  onPrevious,
+  onNext,
+  onRemoveTrack,
+}: {
+  playlists: MusicPlaylist[];
+  currentPlaylistId: MusicPlatform;
+  connections: MusicConnections;
+  localTracks: StoredAudioTrack[];
+  activeTrack: StoredAudioTrack | null;
+  isPlaying: boolean;
+  currentTime: number;
+  duration: number;
+  onTogglePlay: () => Promise<void>;
+  onSelectPlaylist: (playlist: MusicPlaylist) => void;
+  onAddPlaylist: (source?: MusicPlatform) => void;
+  onSelectTrack: (track: StoredAudioTrack) => void;
+  onSeek: (seconds: number) => void;
+  onPrevious: () => void;
+  onNext: () => void;
+  onRemoveTrack: (track: StoredAudioTrack) => void;
+}) {
+  const [source, setSource] = useState<MusicSource>("all");
+  const current =
+    playlists.find((playlist) => playlist.id === currentPlaylistId) ?? playlists[2];
+  const visiblePlaylists =
+    source === "all"
+      ? playlists
+      : playlists.filter((playlist) => playlist.id === source);
+  const progressMaximum = duration > 0 ? duration : 1;
+
+  return (
+    <>
+      <header className="page-heading music-heading">
+        <span>训练音乐</span>
+        <h1>让节奏跟上动作</h1>
+        <p>连接常用歌单，或导入自己的音频。训练记录与音乐都留在手机上。</p>
+      </header>
+
+      <section className="music-player-panel" aria-label="正在播放">
+        <div className="now-playing-copy">
+          <MusicCover source={current.id} />
+          <div>
+            <span>{current.platform}</span>
+            <h2>{current.id === "local" ? activeTrack?.name || current.firstTrack : current.title}</h2>
+            <p>
+              {current.id === "local" && !activeTrack
+                ? "导入音频后可离线播放"
+                : current.artist}
+            </p>
+          </div>
+        </div>
+        {current.id === "local" ? (
+          <>
+            <input
+              className="music-progress"
+              type="range"
+              min="0"
+              max={progressMaximum}
+              step="0.1"
+              value={Math.min(currentTime, progressMaximum)}
+              onChange={(event) => onSeek(Number(event.target.value))}
+              aria-label="本地音频播放进度"
+              disabled={!activeTrack}
+              style={{ "--music-progress": `${(currentTime / progressMaximum) * 100}%` } as React.CSSProperties}
+            />
+            <div className="player-controls">
+              <span>{formatDuration(Math.floor(currentTime))}</span>
+              <div>
+                <button type="button" aria-label="播放上一首" onClick={onPrevious} disabled={localTracks.length < 2}>
+                  <SkipForward size={20} style={{ transform: "rotate(180deg)" }} />
+                </button>
+                <button
+                  className="play-button"
+                  type="button"
+                  aria-label={isPlaying ? "暂停本地音频" : "播放本地音频"}
+                  onClick={onTogglePlay}
+                  disabled={!activeTrack}
+                >
+                  {isPlaying ? <Pause size={23} weight="fill" /> : <Play size={23} weight="fill" />}
+                </button>
+                <button type="button" aria-label="播放下一首" onClick={onNext} disabled={localTracks.length < 2}>
+                  <SkipForward size={20} />
+                </button>
+              </div>
+              <span>{duration ? formatDuration(Math.floor(duration)) : "00:00"}</span>
+            </div>
+          </>
+        ) : (
+          <div className="external-source-note">
+            <span>{current.capability}</span>
+            <p>
+              {current.id === "netease"
+                ? "使用下方网易云官方播放器选歌。"
+                : "点击歌单卡片，从 QQ 音乐官方页面播放。"}
+            </p>
+          </div>
+        )}
+      </section>
+
+      {currentPlaylistId === "netease" && connections.netease && (
+        <section className="netease-player" aria-labelledby="netease-player-title">
+          <div>
+            <span>网易云音乐</span>
+            <h2 id="netease-player-title">{connections.netease.title}</h2>
+          </div>
+          <iframe
+            title={`网易云歌单：${connections.netease.title}`}
+            src={neteasePlayerUrl(connections.netease.playlistId)}
+            loading="lazy"
+            allow="autoplay"
+            referrerPolicy="strict-origin-when-cross-origin"
+          />
+        </section>
+      )}
+
+      <section className="music-library">
+        <div className="section-heading music-section-heading">
+          <div>
+            <h2>我的歌单</h2>
+            <p>按来源查看训练音乐。</p>
+          </div>
+          <button type="button" onClick={() => onAddPlaylist()}>
+            <Plus size={16} weight="bold" />
+            添加歌单
+          </button>
+        </div>
+
+        <div className="source-switcher" aria-label="音乐来源">
+          {([
+            ["all", "全部"],
+            ["netease", "网易云"],
+            ["qq", "QQ 音乐"],
+            ["local", "本地"],
+          ] as const).map(([value, label]) => (
+            <button
+              type="button"
+              key={value}
+              className={source === value ? "active" : ""}
+              onClick={() => setSource(value)}
+              aria-pressed={source === value}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="playlist-stack">
+          {visiblePlaylists.map((playlist) => (
+            <article
+              className={`playlist-card ${current.id === playlist.id ? "is-current" : ""}`}
+              key={playlist.id}
+            >
+              <MusicCover source={playlist.id} />
+              <div className="playlist-copy">
+                <div>
+                  <span>{playlist.platform}</span>
+                  <small>{playlist.capability}</small>
+                </div>
+                <h3>{playlist.title}</h3>
+                <p>{playlist.description}</p>
+                <strong>{playlist.trackCount}</strong>
+              </div>
+              {playlist.id === "qq" && connections.qq ? (
+                <a href={connections.qq.url} target="_blank" rel="noreferrer">
+                  {playlist.actionLabel}
+                  <ArrowSquareOut size={18} />
+                </a>
+              ) : (
+                <button type="button" onClick={() => onSelectPlaylist(playlist)}>
+                  {playlist.actionLabel}
+                  <Play size={18} weight="fill" />
+                </button>
+              )}
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {currentPlaylistId === "local" && (
+        <section className="local-audio-library" aria-labelledby="local-audio-title">
+          <div className="section-heading music-section-heading">
+            <div>
+              <h2 id="local-audio-title">本地音频</h2>
+              <p>音频保存在当前浏览器，可离线使用。</p>
+            </div>
+            <button type="button" onClick={() => onAddPlaylist("local")}>
+              <UploadSimple size={16} weight="bold" />
+              导入
+            </button>
+          </div>
+          {localTracks.length === 0 ? (
+            <div className="music-empty-state">
+              <Headphones size={34} weight="duotone" />
+              <h3>还没有本地音频</h3>
+              <p>从 iPhone 文件或 Obsidian 附件目录选择音频。</p>
+              <button type="button" onClick={() => onAddPlaylist("local")}>选择音频</button>
+            </div>
+          ) : (
+            <div className="local-track-list">
+              {localTracks.map((track) => (
+                <article className={track.id === activeTrack?.id ? "is-current" : ""} key={track.id}>
+                  <button className="track-play" type="button" onClick={() => onSelectTrack(track)}>
+                    {track.id === activeTrack?.id && isPlaying ? (
+                      <Pause size={18} weight="fill" />
+                    ) : (
+                      <Play size={18} weight="fill" />
+                    )}
+                    <span>
+                      <strong>{track.name}</strong>
+                      <small>{track.fileName}</small>
+                    </span>
+                  </button>
+                  <button className="track-remove" type="button" onClick={() => onRemoveTrack(track)} aria-label={`删除 ${track.name}`}>
+                    <Trash size={17} />
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      <section className="music-access-panel" aria-labelledby="music-access-title">
+        <div>
+          <Headphones size={24} weight="duotone" />
+          <div>
+            <h2 id="music-access-title">三种播放方式</h2>
+            <p>不读取音乐账号 Cookie，也不会把本地音频上传到公开仓库。</p>
+          </div>
+        </div>
+        <ol>
+          <li><strong>网易云</strong><span>页面内播放</span></li>
+          <li><strong>QQ 音乐</strong><span>官方页面播放</span></li>
+          <li><strong>本地音频</strong><span>离线播放</span></li>
+        </ol>
+      </section>
+    </>
+  );
+}
+
+function MusicSetupSheet({
+  initialSource,
+  onClose,
+  onSaveNetease,
+  onSaveQQ,
+  onImportFiles,
+}: {
+  initialSource: MusicPlatform;
+  onClose: () => void;
+  onSaveNetease: (value: string, title: string) => string | null;
+  onSaveQQ: (value: string, title: string) => string | null;
+  onImportFiles: (files: File[]) => Promise<void>;
+}) {
+  const [source, setSource] = useState<MusicPlatform>(initialSource);
+  const [value, setValue] = useState("");
+  const [title, setTitle] = useState("");
+  const [error, setError] = useState("");
+  const [importing, setImporting] = useState(false);
+
+  function saveConnection(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const result = source === "netease" ? onSaveNetease(value, title) : onSaveQQ(value, title);
+    if (result) {
+      setError(result);
+      return;
+    }
+    onClose();
+  }
+
+  async function importFiles(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (!files.length) return;
+    setImporting(true);
+    setError("");
+    try {
+      await onImportFiles(files);
+      onClose();
+    } catch {
+      setError("音频保存失败，请确认浏览器仍有可用存储空间。");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <div className="sheet-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="install-sheet music-setup-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="music-setup-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="sheet-handle" />
+        <IconButton label="关闭" onClick={onClose}><X size={22} /></IconButton>
+        <h2 id="music-setup-title">添加训练音乐</h2>
+        <p>选择音乐来源。连接信息和本地音频仅保存在这台设备。</p>
+
+        <div className="music-setup-sources" aria-label="选择音乐来源">
+          {([
+            ["netease", "网易云"],
+            ["qq", "QQ 音乐"],
+            ["local", "本地音频"],
+          ] as const).map(([itemSource, label]) => (
+            <button
+              type="button"
+              key={itemSource}
+              className={source === itemSource ? "active" : ""}
+              onClick={() => {
+                setSource(itemSource);
+                setError("");
+              }}
+              aria-pressed={source === itemSource}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {source === "local" ? (
+          <div className="music-file-import">
+            <UploadSimple size={34} weight="duotone" />
+            <strong>选择一个或多个音频文件</strong>
+            <span>支持 iPhone 文件 App 中可打开的音频格式。</span>
+            <label className="primary-button file-button">
+              {importing ? "正在保存" : "选择音频"}
+              <input type="file" accept="audio/*,.m4a,.mp3,.wav,.aac,.flac" multiple onChange={importFiles} disabled={importing} />
+            </label>
+          </div>
+        ) : (
+          <form className="music-connection-form" onSubmit={saveConnection}>
+            <label>
+              <span>{source === "netease" ? "歌单链接或数字 ID" : "歌单分享链接"}</span>
+              <input
+                type="text"
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
+                placeholder={source === "netease" ? "例如 123456789" : "粘贴 QQ 音乐分享链接"}
+                autoCapitalize="none"
+                autoCorrect="off"
+                required
+              />
+            </label>
+            <label>
+              <span>显示名称（可选）</span>
+              <input type="text" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="例如 力量训练歌单" />
+            </label>
+            <p className="music-form-help">
+              {source === "netease"
+                ? "保存后会加载网易云官方外链播放器。"
+                : "保存后会通过 QQ 音乐官方页面或 App 打开。"}
+            </p>
+            <button className="primary-button" type="submit">保存连接</button>
+          </form>
+        )}
+        {error && <div className="music-form-error" role="alert"><Warning size={17} />{error}</div>}
+      </section>
+    </div>
+  );
+}
+
 function InstallSheet({
   onClose,
   deferredPrompt,
@@ -727,16 +1201,29 @@ function InstallSheet({
 export default function FitnessApp() {
   const [tab, setTab] = useState<Tab>("today");
   const [records, setRecords] = useState<WorkoutRecord[]>([]);
+  const [currentPlaylistId, setCurrentPlaylistId] = useState<MusicPlatform>("local");
+  const [connections, setConnections] = useState<MusicConnections>({});
+  const [localTracks, setLocalTracks] = useState<StoredAudioTrack[]>([]);
+  const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
+  const [isMusicPlaying, setIsMusicPlaying] = useState(false);
+  const [musicCurrentTime, setMusicCurrentTime] = useState(0);
+  const [musicDuration, setMusicDuration] = useState(0);
+  const [musicSetupOpen, setMusicSetupOpen] = useState(false);
+  const [musicSetupSource, setMusicSetupSource] = useState<MusicPlatform>("netease");
   const [ready, setReady] = useState(false);
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
   const [installOpen, setInstallOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<DeferredInstallPrompt | null>(null);
   const [message, setMessage] = useState("");
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const pendingAutoplayRef = useRef(false);
 
   useEffect(() => {
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
       if (stored) setRecords(JSON.parse(stored));
+      const storedConnections = window.localStorage.getItem(MUSIC_CONNECTIONS_KEY);
+      if (storedConnections) setConnections(JSON.parse(storedConnections));
     } catch {
       setMessage("本地记录读取失败，请从 JSON 备份恢复。");
     } finally {
@@ -756,6 +1243,15 @@ export default function FitnessApp() {
   }, []);
 
   useEffect(() => {
+    listStoredAudioTracks()
+      .then((tracks) => {
+        setLocalTracks(tracks);
+        if (tracks[0]) setActiveTrackId(tracks[0].id);
+      })
+      .catch(() => setMessage("本地音频读取失败，可重新导入音频。"));
+  }, []);
+
+  useEffect(() => {
     if (!ready) return;
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
   }, [records, ready]);
@@ -766,6 +1262,23 @@ export default function FitnessApp() {
     return () => window.clearTimeout(timer);
   }, [message]);
 
+  const activeTrack = useMemo(
+    () => localTracks.find((track) => track.id === activeTrackId) ?? null,
+    [activeTrackId, localTracks],
+  );
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !activeTrack) return;
+    const url = URL.createObjectURL(activeTrack.blob);
+    audio.src = url;
+    audio.load();
+    return () => {
+      audio.pause();
+      URL.revokeObjectURL(url);
+    };
+  }, [activeTrack]);
+
   const week = currentWeekKeys();
   const weekRecords = useMemo(
     () => records.filter((record) => record.date >= week.start && record.date <= week.end),
@@ -775,6 +1288,134 @@ export default function FitnessApp() {
     workouts.slice(0, 3).find(
       (workout) => !weekRecords.some((record) => record.workoutId === workout.id),
     ) ?? workouts[3];
+  const musicPlaylists = useMemo(
+    () => createMusicPlaylists(connections, localTracks, activeTrack),
+    [activeTrack, connections, localTracks],
+  );
+  async function toggleMusic() {
+    const audio = audioRef.current;
+    if (!audio || !activeTrack) {
+      setTab("music");
+      setCurrentPlaylistId("local");
+      setMessage("请先导入并选择一首本地音频。");
+      return;
+    }
+    if (audio.paused) {
+      try {
+        await audio.play();
+      } catch {
+        setMessage("浏览器没有开始播放，请再次点击播放按钮。");
+      }
+    } else {
+      audio.pause();
+    }
+  }
+
+  function openMusicSetup(source: MusicPlatform = "netease") {
+    setMusicSetupSource(source);
+    setMusicSetupOpen(true);
+  }
+
+  function selectMusicPlaylist(playlist: MusicPlaylist) {
+    setCurrentPlaylistId(playlist.id);
+    if (playlist.id !== "local" && audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause();
+    }
+    if (playlist.id === "netease" && !connections.netease) {
+      openMusicSetup("netease");
+      return;
+    }
+    if (playlist.id === "qq") {
+      if (!connections.qq) {
+        openMusicSetup("qq");
+        return;
+      }
+      window.open(connections.qq.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (playlist.id === "local" && localTracks.length === 0) openMusicSetup("local");
+  }
+
+  function activateTrack(track: StoredAudioTrack, autoplay = true) {
+    const isCurrent = track.id === activeTrackId;
+    setCurrentPlaylistId("local");
+    if (isCurrent) {
+      if (autoplay) void toggleMusic();
+      return;
+    }
+    setMusicCurrentTime(0);
+    setMusicDuration(0);
+    pendingAutoplayRef.current = autoplay;
+    setActiveTrackId(track.id);
+  }
+
+  function moveTrack(direction: -1 | 1) {
+    if (localTracks.length < 2) return;
+    const currentIndex = Math.max(0, localTracks.findIndex((track) => track.id === activeTrackId));
+    const nextIndex = (currentIndex + direction + localTracks.length) % localTracks.length;
+    activateTrack(localTracks[nextIndex], true);
+  }
+
+  function seekMusic(seconds: number) {
+    if (!audioRef.current) return;
+    audioRef.current.currentTime = seconds;
+    setMusicCurrentTime(seconds);
+  }
+
+  function saveConnections(next: MusicConnections) {
+    setConnections(next);
+    window.localStorage.setItem(MUSIC_CONNECTIONS_KEY, JSON.stringify(next));
+  }
+
+  function saveNeteaseConnection(value: string, title: string) {
+    const playlistId = parseNeteasePlaylistId(value);
+    if (!playlistId) return "无法识别歌单。请粘贴网易云歌单链接或数字 ID。";
+    saveConnections({
+      ...connections,
+      netease: { playlistId, title: title.trim() || "我的网易云训练歌单" },
+    });
+    setCurrentPlaylistId("netease");
+    setMessage("网易云歌单已连接。可在页面内选择歌曲。");
+    return null;
+  }
+
+  function saveQQConnection(value: string, title: string) {
+    const url = normalizeQQMusicUrl(value);
+    if (!url) return "无法识别链接。请从 QQ 音乐复制歌单分享链接。";
+    saveConnections({
+      ...connections,
+      qq: { url, title: title.trim() || "我的 QQ 音乐训练歌单" },
+    });
+    setCurrentPlaylistId("qq");
+    setMessage("QQ 音乐歌单已连接。点击歌单会打开官方页面。");
+    return null;
+  }
+
+  async function importAudioFiles(files: File[]) {
+    const audioFiles = files.filter((file) => file.type.startsWith("audio/") || /\.(m4a|mp3|wav|aac|flac)$/i.test(file.name));
+    if (!audioFiles.length) throw new Error("not-audio");
+    const saved = await saveAudioFiles(audioFiles);
+    setLocalTracks((current) => [...saved, ...current]);
+    setCurrentPlaylistId("local");
+    setMusicCurrentTime(0);
+    setMusicDuration(0);
+    setActiveTrackId(saved[0].id);
+    setMessage(`已保存 ${saved.length} 首本地音频，可离线播放。`);
+  }
+
+  async function removeLocalTrack(track: StoredAudioTrack) {
+    if (!window.confirm(`从本机删除“${track.name}”？`)) return;
+    await removeStoredAudioTrack(track.id);
+    const remaining = localTracks.filter((item) => item.id !== track.id);
+    setLocalTracks(remaining);
+    if (activeTrackId === track.id) {
+      audioRef.current?.pause();
+      setActiveTrackId(remaining[0]?.id ?? null);
+      setMusicCurrentTime(0);
+      setMusicDuration(0);
+    }
+    setMessage("本地音频已删除。");
+  }
 
   function finishWorkout(
     entries: Record<string, ExerciseEntry>,
@@ -861,22 +1502,53 @@ export default function FitnessApp() {
     );
   }
 
+  const audioPlayer = (
+    <audio
+      ref={audioRef}
+      hidden
+      preload="metadata"
+      onPlay={() => setIsMusicPlaying(true)}
+      onPause={() => setIsMusicPlaying(false)}
+      onTimeUpdate={(event) => setMusicCurrentTime(event.currentTarget.currentTime)}
+      onDurationChange={(event) => {
+        const nextDuration = event.currentTarget.duration;
+        setMusicDuration(Number.isFinite(nextDuration) ? nextDuration : 0);
+      }}
+      onCanPlay={(event) => {
+        if (!pendingAutoplayRef.current) return;
+        pendingAutoplayRef.current = false;
+        event.currentTarget.play().catch(() => setMessage("音频已选中，请点击播放按钮开始。"));
+      }}
+      onEnded={() => moveTrack(1)}
+      onError={() => {
+        pendingAutoplayRef.current = false;
+        setIsMusicPlaying(false);
+        setMessage("这段音频无法播放，请尝试导入其他格式。");
+      }}
+    />
+  );
+
   if (activeWorkout) {
     return (
-      <WorkoutSession
-        workout={activeWorkout}
-        onExit={() => {
-          if (window.confirm("退出后，本次未保存的记录会丢失。确定退出吗？")) {
-            setActiveWorkout(null);
-          }
-        }}
-        onFinish={finishWorkout}
-      />
+      <>
+        {audioPlayer}
+        <WorkoutSession
+          workout={activeWorkout}
+          onExit={() => {
+            if (window.confirm("退出后，本次未保存的记录会丢失。确定退出吗？")) {
+              setActiveWorkout(null);
+            }
+          }}
+          onFinish={finishWorkout}
+        />
+      </>
     );
   }
 
   return (
-    <div className="app-shell">
+    <>
+    {audioPlayer}
+    <div className={`app-shell ${tab !== "music" && activeTrack ? "has-mini-player" : ""}`}>
       <main className="content-shell">
         {tab === "today" && (
           <TodayView
@@ -890,6 +1562,26 @@ export default function FitnessApp() {
         {tab === "plan" && (
           <PlanView weekRecords={weekRecords} onStart={setActiveWorkout} />
         )}
+        {tab === "music" && (
+          <MusicView
+            playlists={musicPlaylists}
+            currentPlaylistId={currentPlaylistId}
+            connections={connections}
+            localTracks={localTracks}
+            activeTrack={activeTrack}
+            isPlaying={isMusicPlaying}
+            currentTime={musicCurrentTime}
+            duration={musicDuration}
+            onTogglePlay={toggleMusic}
+            onSelectPlaylist={selectMusicPlaylist}
+            onAddPlaylist={openMusicSetup}
+            onSelectTrack={(track) => activateTrack(track)}
+            onSeek={seekMusic}
+            onPrevious={() => moveTrack(-1)}
+            onNext={() => moveTrack(1)}
+            onRemoveTrack={(track) => void removeLocalTrack(track)}
+          />
+        )}
         {tab === "records" && (
           <RecordsView
             records={records}
@@ -899,6 +1591,26 @@ export default function FitnessApp() {
           />
         )}
       </main>
+
+      {tab !== "music" && activeTrack && (
+        <aside className="mini-player" aria-label="迷你音乐播放器">
+          <button className="mini-player-copy" type="button" onClick={() => setTab("music")}>
+            <MusicCover source="local" compact />
+            <span>
+              <strong>{activeTrack.name}</strong>
+              <small>本机离线音乐</small>
+            </span>
+          </button>
+          <button
+            className="mini-player-control"
+            type="button"
+            aria-label={isMusicPlaying ? "暂停本地音频" : "播放本地音频"}
+            onClick={() => void toggleMusic()}
+          >
+            {isMusicPlaying ? <Pause size={21} weight="fill" /> : <Play size={21} weight="fill" />}
+          </button>
+        </aside>
+      )}
 
       <nav className="bottom-nav" aria-label="主要导航">
         <button
@@ -921,6 +1633,15 @@ export default function FitnessApp() {
         </button>
         <button
           type="button"
+          className={tab === "music" ? "active" : ""}
+          onClick={() => setTab("music")}
+          aria-current={tab === "music" ? "page" : undefined}
+        >
+          <MusicNotes size={23} weight={tab === "music" ? "fill" : "regular"} />
+          <span>音乐</span>
+        </button>
+        <button
+          type="button"
           className={tab === "records" ? "active" : ""}
           onClick={() => setTab("records")}
           aria-current={tab === "records" ? "page" : undefined}
@@ -936,11 +1657,21 @@ export default function FitnessApp() {
           deferredPrompt={deferredPrompt}
         />
       )}
+      {musicSetupOpen && (
+        <MusicSetupSheet
+          initialSource={musicSetupSource}
+          onClose={() => setMusicSetupOpen(false)}
+          onSaveNetease={saveNeteaseConnection}
+          onSaveQQ={saveQQConnection}
+          onImportFiles={importAudioFiles}
+        />
+      )}
       {message && (
         <div className="toast" role="status" aria-live="polite">
           {message}
         </div>
       )}
     </div>
+    </>
   );
 }
