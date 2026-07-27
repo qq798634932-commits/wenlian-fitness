@@ -72,6 +72,16 @@ await page.getByRole("button", { name: "添加歌单" }).click();
 await page.getByLabel("歌单链接或数字 ID").fill("https://music.163.com/playlist?id=123456789");
 await page.getByLabel("显示名称（可选）").fill("深蹲训练");
 await page.getByRole("button", { name: "保存连接" }).click();
+const neteaseWebPlayer = page.getByRole("link", { name: "打开网页播放器" });
+await neteaseWebPlayer.waitFor();
+assert.match(await neteaseWebPlayer.getAttribute("href"), /outchain\/player\?.*id=123456789/);
+assert.equal(
+  await page.getByRole("link", { name: "在网易云打开歌单" }).getAttribute("href"),
+  "https://music.163.com/playlist?id=123456789",
+);
+assert.equal(await page.locator(".netease-player iframe").count(), 0);
+await page.screenshot({ path: "/private/tmp/wenlian-netease-fallback.png", fullPage: true });
+await page.getByRole("button", { name: "尝试页面内播放" }).click();
 const neteaseFrame = page.locator(".netease-player iframe");
 await neteaseFrame.waitFor();
 assert.match(await neteaseFrame.getAttribute("src"), /id=123456789/);

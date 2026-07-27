@@ -1,4 +1,4 @@
-const CACHE_NAME = "wenlian-v4";
+const CACHE_NAME = "wenlian-v5";
 const BASE_URL = new URL("./", self.location.href);
 const APP_ASSETS = [
   "./",

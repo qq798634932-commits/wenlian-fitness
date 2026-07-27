@@ -47,3 +47,8 @@ export function neteasePlayerUrl(playlistId: string) {
   });
   return `https://music.163.com/outchain/player?${params.toString()}`;
 }
+
+export function neteasePlaylistUrl(playlistId: string) {
+  const params = new URLSearchParams({ id: playlistId });
+  return `https://music.163.com/playlist?${params.toString()}`;
+}

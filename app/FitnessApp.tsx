@@ -29,6 +29,7 @@ import {
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   MusicPlatform,
+  neteasePlaylistUrl,
   neteasePlayerUrl,
   normalizeQQMusicUrl,
   parseNeteasePlaylistId,
@@ -115,12 +116,12 @@ function createMusicPlaylists(
       platform: "网易云音乐",
       title: connections.netease?.title || "连接训练歌单",
       description: connections.netease
-        ? "使用网易云官方外链播放器，可直接在当前页面选歌。"
-        : "粘贴网易云歌单链接或数字 ID，在页面内打开官方播放器。",
+        ? "iPhone 从网易云官方页面稳定播放，也可尝试页面内播放器。"
+        : "粘贴网易云歌单链接或数字 ID，连接官方播放器。",
       trackCount: connections.netease ? "已连接" : "等待添加",
       firstTrack: connections.netease?.title || "网易云官方播放器",
       artist: "网易云音乐",
-      capability: "页面内播放",
+      capability: "官方页面播放",
       actionLabel: connections.netease ? "打开播放器" : "连接歌单",
     },
     {
@@ -784,6 +785,7 @@ function MusicView({
   onRemoveTrack: (track: StoredAudioTrack) => void;
 }) {
   const [source, setSource] = useState<MusicSource>("all");
+  const [showNeteaseEmbed, setShowNeteaseEmbed] = useState(false);
   const current =
     playlists.find((playlist) => playlist.id === currentPlaylistId) ?? playlists[2];
   const visiblePlaylists =
@@ -854,7 +856,7 @@ function MusicView({
             <span>{current.capability}</span>
             <p>
               {current.id === "netease"
-                ? "使用下方网易云官方播放器选歌。"
+                ? "使用下方按钮打开网易云官方播放器。"
                 : "点击歌单卡片，从 QQ 音乐官方页面播放。"}
             </p>
           </div>
@@ -863,17 +865,49 @@ function MusicView({
 
       {currentPlaylistId === "netease" && connections.netease && (
         <section className="netease-player" aria-labelledby="netease-player-title">
-          <div>
+          <div className="netease-player-heading">
             <span>网易云音乐</span>
             <h2 id="netease-player-title">{connections.netease.title}</h2>
           </div>
-          <iframe
-            title={`网易云歌单：${connections.netease.title}`}
-            src={neteasePlayerUrl(connections.netease.playlistId)}
-            loading="lazy"
-            allow="autoplay"
-            referrerPolicy="strict-origin-when-cross-origin"
-          />
+          <div className="netease-player-fallback">
+            <div className="netease-player-fallback-icon" aria-hidden="true">
+              <Headphones size={22} weight="fill" />
+            </div>
+            <div className="netease-player-fallback-copy">
+              <strong>iPhone 请在新页面播放</strong>
+              <p>Safari 会限制第三方内嵌播放器。新页面播放更稳定，返回后训练内容仍会保留。</p>
+            </div>
+            <div className="netease-player-actions">
+              <a
+                className="netease-player-primary"
+                href={neteasePlayerUrl(connections.netease.playlistId)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                打开网页播放器
+                <ArrowSquareOut size={16} weight="bold" />
+              </a>
+              <a
+                href={neteasePlaylistUrl(connections.netease.playlistId)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                在网易云打开歌单
+              </a>
+              <button type="button" onClick={() => setShowNeteaseEmbed((value) => !value)}>
+                {showNeteaseEmbed ? "收起页面内播放器" : "尝试页面内播放"}
+              </button>
+            </div>
+          </div>
+          {showNeteaseEmbed && (
+            <iframe
+              title={`网易云歌单：${connections.netease.title}`}
+              src={neteasePlayerUrl(connections.netease.playlistId)}
+              loading="lazy"
+              allow="autoplay"
+              referrerPolicy="strict-origin-when-cross-origin"
+            />
+          )}
         </section>
       )}
 
@@ -993,7 +1027,7 @@ function MusicView({
           </div>
         </div>
         <ol>
-          <li><strong>网易云</strong><span>页面内播放</span></li>
+          <li><strong>网易云</strong><span>官方页面播放</span></li>
           <li><strong>QQ 音乐</strong><span>官方页面播放</span></li>
           <li><strong>本地音频</strong><span>离线播放</span></li>
         </ol>
@@ -1112,7 +1146,7 @@ function MusicSetupSheet({
             </label>
             <p className="music-form-help">
               {source === "netease"
-                ? "保存后会加载网易云官方外链播放器。"
+                ? "保存后可打开网易云官方播放器；页面内播放作为兼容选项。"
                 : "保存后会通过 QQ 音乐官方页面或 App 打开。"}
             </p>
             <button className="primary-button" type="submit">保存连接</button>
@@ -1374,7 +1408,7 @@ export default function FitnessApp() {
       netease: { playlistId, title: title.trim() || "我的网易云训练歌单" },
     });
     setCurrentPlaylistId("netease");
-    setMessage("网易云歌单已连接。可在页面内选择歌曲。");
+    setMessage("网易云歌单已连接。iPhone 请使用官方页面播放。");
     return null;
   }
 
