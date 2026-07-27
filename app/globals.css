@@ -108,6 +108,40 @@ label.file-button:active {
     calc(108px + env(safe-area-inset-bottom));
 }
 
+.account-bar {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.account-bar > span,
+.account-bar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.account-bar > span {
+  color: var(--muted);
+}
+
+.account-bar > span svg {
+  color: var(--accent-strong);
+}
+
+.account-bar button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--surface);
+  padding: 0 11px;
+}
+
 .app-shell.has-mini-player .content-shell {
   padding-bottom: calc(174px + env(safe-area-inset-bottom));
 }
@@ -676,6 +710,14 @@ label.file-button:active {
   padding: 5px;
 }
 
+.source-switcher.is-links-only {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.music-access-panel.is-links-only ol {
+  grid-template-columns: repeat(2, 1fr);
+}
+
 .source-switcher button {
   min-height: 40px;
   border: 0;
@@ -884,6 +926,10 @@ label.file-button:active {
   border-color: var(--accent-strong);
   background: var(--accent-strong);
   color: #18200e;
+}
+
+.netease-player-actions .netease-player-primary:only-child {
+  grid-column: 1 / -1;
 }
 
 .netease-player-actions button {
@@ -2727,6 +2773,468 @@ label.file-button:active {
 
 .loading-shell svg {
   color: var(--accent-strong);
+}
+
+.family-auth-shell,
+.cloud-state-shell,
+.admin-shell {
+  width: min(100%, 640px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: var(--page);
+}
+
+.family-auth-shell {
+  display: grid;
+  place-items: center;
+  padding: max(28px, env(safe-area-inset-top)) 18px max(28px, env(safe-area-inset-bottom));
+}
+
+.family-auth-card {
+  width: min(100%, 420px);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 30px 24px 24px;
+}
+
+.family-auth-mark {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  place-items: center;
+  margin-bottom: 24px;
+  border-radius: 17px;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.family-auth-card > span,
+.account-sheet > span,
+.migration-sheet > span,
+.admin-header span {
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.family-auth-card h1 {
+  margin: 6px 0 10px;
+  font-size: 34px;
+  letter-spacing: -0.055em;
+}
+
+.family-auth-card > p {
+  margin: 0 0 24px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.family-auth-form {
+  display: grid;
+  gap: 10px;
+}
+
+.family-auth-form > label,
+.admin-invite-card label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.family-auth-input {
+  display: flex;
+  min-height: 50px;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--page);
+  padding: 0 13px;
+}
+
+.family-auth-input:focus-within {
+  border-color: var(--accent-strong);
+  outline: 3px solid color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.family-auth-input input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.family-auth-primary,
+.family-auth-ghost {
+  min-height: 48px;
+  border-radius: var(--control-radius);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.family-auth-primary {
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.family-auth-primary:disabled {
+  opacity: 0.55;
+}
+
+.family-auth-ghost {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.family-auth-error,
+.admin-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.family-auth-privacy,
+.family-auth-success,
+.account-sync-note,
+.admin-privacy-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border-radius: 15px;
+  background: var(--surface-strong);
+  padding: 13px;
+}
+
+.family-auth-privacy {
+  margin-top: 18px;
+}
+
+.family-auth-privacy svg,
+.family-auth-success svg,
+.account-sync-note svg,
+.admin-privacy-note svg {
+  flex: 0 0 auto;
+  color: var(--accent-strong);
+}
+
+.family-auth-privacy p,
+.family-auth-success p,
+.admin-privacy-note p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.family-auth-success strong {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 13px;
+}
+
+.cloud-state-shell {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  padding: 28px;
+  text-align: center;
+}
+
+.cloud-state-shell > svg {
+  color: var(--accent-strong);
+}
+
+.cloud-state-shell > strong {
+  font-size: 21px;
+  letter-spacing: -0.03em;
+}
+
+.cloud-state-shell > p {
+  max-width: 30ch;
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.cloud-state-shell > button {
+  width: min(100%, 300px);
+}
+
+.account-sheet {
+  position: relative;
+  width: min(100%, 640px);
+  margin: 0 auto;
+  border-radius: 28px 28px 0 0;
+  background: var(--surface);
+  padding: 26px 22px calc(24px + env(safe-area-inset-bottom));
+  box-shadow: 0 -20px 56px rgb(10 12 9 / 0.22);
+}
+
+.sheet-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 0;
+  border-radius: 13px;
+  background: var(--surface-strong);
+}
+
+.account-sheet > svg {
+  margin-bottom: 20px;
+  color: var(--accent-strong);
+}
+
+.account-sheet h2 {
+  margin: 5px 0 3px;
+  font-size: 25px;
+  letter-spacing: -0.04em;
+}
+
+.account-sheet > p {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.account-sync-note {
+  align-items: center;
+  margin-bottom: 16px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.account-action {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--page);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.account-action.is-danger {
+  color: var(--danger);
+}
+
+.admin-shell {
+  padding: max(18px, env(safe-area-inset-top)) 18px calc(30px + env(safe-area-inset-bottom));
+}
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.admin-header > button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.admin-header h1 {
+  margin: 4px 0 0;
+  font-size: 28px;
+  letter-spacing: -0.05em;
+}
+
+.admin-privacy-note {
+  margin-bottom: 14px;
+}
+
+.admin-invite-card,
+.admin-members {
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: var(--surface);
+  padding: 18px;
+}
+
+.admin-invite-card h2,
+.admin-members h2 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: -0.03em;
+}
+
+.admin-invite-card form {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.admin-invite-card label {
+  display: grid;
+  gap: 7px;
+}
+
+.admin-invite-card input {
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--page);
+  color: var(--text);
+  padding: 0 12px;
+}
+
+.admin-message {
+  margin-top: 12px;
+}
+
+.admin-members > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.admin-members > div:first-child span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.admin-members article {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding: 13px 0;
+}
+
+.admin-members article > div {
+  min-width: 0;
+}
+
+.admin-members article strong,
+.admin-members article small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-members article strong {
+  font-size: 13px;
+}
+
+.admin-members article small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.admin-members article button,
+.member-role {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--page);
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.member-role {
+  display: inline-flex;
+  align-items: center;
+}
+
+.admin-empty {
+  margin: 18px 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.migration-sheet {
+  text-align: left;
+}
+
+.migration-icon {
+  display: grid;
+  width: 50px;
+  height: 50px;
+  place-items: center;
+  margin-bottom: 18px;
+  border-radius: 16px;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.migration-sheet h2,
+.migration-sheet > p {
+  margin-right: 0;
+  margin-left: 0;
+  text-align: left;
+}
+
+.migration-sheet dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin: 18px 0;
+}
+
+.migration-sheet dl > div {
+  border-radius: 13px;
+  background: var(--surface-strong);
+  padding: 12px;
+}
+
+.migration-sheet dt {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.migration-sheet dd {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.migration-skip {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 7px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
 }
 
 @media (min-width: 700px) {

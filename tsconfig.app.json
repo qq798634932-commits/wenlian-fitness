@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "static-site/**/*.ts",
+    "static-site/**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "supabase/functions",
+    "worker",
+    "db"
+  ]
+}

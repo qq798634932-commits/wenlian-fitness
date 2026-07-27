@@ -1,5 +1,5 @@
-import FitnessApp from "./FitnessApp";
+import FamilyAuthGate from "./FamilyAuthGate";
 
 export default function Home() {
-  return <FitnessApp />;
+  return <FamilyAuthGate />;
 }

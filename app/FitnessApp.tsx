@@ -23,6 +23,7 @@ import {
   Timer,
   Trash,
   UploadSimple,
+  UserCircle,
   Warning,
   X,
 } from "@phosphor-icons/react";
@@ -30,10 +31,20 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "re
 import {
   MusicPlatform,
   neteasePlaylistUrl,
-  neteasePlayerUrl,
   normalizeQQMusicUrl,
   parseNeteasePlaylistId,
 } from "./music-links";
+import type { CloudSession } from "./cloud/client";
+import {
+  CloudSnapshot,
+  hasCloudData,
+  importLocalSnapshot,
+  loadCloudSnapshot,
+  saveCloudCheckInAndPlan,
+  saveCloudConnections,
+  saveCloudProfile,
+  saveCloudRecord,
+} from "./cloud/data";
 import {
   listStoredAudioTracks,
   removeStoredAudioTrack,
@@ -66,7 +77,7 @@ type MusicPlaylist = {
   actionLabel: string;
 };
 
-type MusicConnections = {
+export type MusicConnections = {
   netease?: { playlistId: string; title: string };
   qq?: { url: string; title: string };
 };
@@ -78,7 +89,7 @@ type ExerciseEntry = {
   rpe: string;
 };
 
-type WorkoutRecord = {
+export type WorkoutRecord = {
   id: string;
   workoutId: string;
   title: string;
@@ -105,6 +116,45 @@ const BODY_LOGS_KEY = "wenlian-body-logs-v1";
 const PERSONAL_WORKOUT_KEY = "wenlian-personal-workout-v1";
 const BACKUP_VERSION = 2;
 
+type StorageKeys = {
+  records: string;
+  connections: string;
+  profile: string;
+  bodyLogs: string;
+  personalWorkout: string;
+  dirty: string;
+};
+
+function parseStoredValue<T>(key: string, fallback: T): T {
+  try {
+    const value = window.localStorage.getItem(key);
+    return value ? JSON.parse(value) as T : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function readStoredSnapshot(keys: StorageKeys): CloudSnapshot {
+  return {
+    records: parseStoredValue<WorkoutRecord[]>(keys.records, []),
+    connections: parseStoredValue<MusicConnections>(keys.connections, {}),
+    trainingProfile: parseStoredValue<TrainingProfile | null>(keys.profile, null),
+    bodyLogs: parseStoredValue<DailyCheckIn[]>(keys.bodyLogs, []),
+    personalWorkout: parseStoredValue<PersonalizedWorkout | null>(keys.personalWorkout, null),
+  };
+}
+
+function legacyStorageKeys(): StorageKeys {
+  return {
+    records: STORAGE_KEY,
+    connections: MUSIC_CONNECTIONS_KEY,
+    profile: PROFILE_KEY,
+    bodyLogs: BODY_LOGS_KEY,
+    personalWorkout: PERSONAL_WORKOUT_KEY,
+    dirty: "wenlian-cloud-dirty-v1",
+  };
+}
+
 function createMusicPlaylists(
   connections: MusicConnections,
   localTracks: StoredAudioTrack[],
@@ -116,8 +166,8 @@ function createMusicPlaylists(
       platform: "网易云音乐",
       title: connections.netease?.title || "连接训练歌单",
       description: connections.netease
-        ? "iPhone 从网易云官方页面稳定播放，也可尝试页面内播放器。"
-        : "粘贴网易云歌单链接或数字 ID，连接官方播放器。",
+        ? "歌单链接已保存，训练时从网易云官方页面打开。"
+        : "粘贴网易云歌单链接或数字 ID，保存到私人档案。",
       trackCount: connections.netease ? "已连接" : "等待添加",
       firstTrack: connections.netease?.title || "网易云官方播放器",
       artist: "网易云音乐",
@@ -766,6 +816,7 @@ function MusicView({
   onPrevious,
   onNext,
   onRemoveTrack,
+  linksOnly,
 }: {
   playlists: MusicPlaylist[];
   currentPlaylistId: MusicPlatform;
@@ -783,11 +834,11 @@ function MusicView({
   onPrevious: () => void;
   onNext: () => void;
   onRemoveTrack: (track: StoredAudioTrack) => void;
+  linksOnly: boolean;
 }) {
   const [source, setSource] = useState<MusicSource>("all");
-  const [showNeteaseEmbed, setShowNeteaseEmbed] = useState(false);
   const current =
-    playlists.find((playlist) => playlist.id === currentPlaylistId) ?? playlists[2];
+    playlists.find((playlist) => playlist.id === currentPlaylistId) ?? playlists[0];
   const visiblePlaylists =
     source === "all"
       ? playlists
@@ -799,7 +850,7 @@ function MusicView({
       <header className="page-heading music-heading">
         <span>训练音乐</span>
         <h1>让节奏跟上动作</h1>
-        <p>连接常用歌单，或导入自己的音频。训练记录与音乐都留在手机上。</p>
+        <p>{linksOnly ? "保存常用歌单，训练时跳转到网易云或 QQ 音乐。" : "连接常用歌单，或导入自己的音频。训练记录与音乐都留在手机上。"}</p>
       </header>
 
       <section className="music-player-panel" aria-label="正在播放">
@@ -815,7 +866,7 @@ function MusicView({
             </p>
           </div>
         </div>
-        {current.id === "local" ? (
+        {current.id === "local" && !linksOnly ? (
           <>
             <input
               className="music-progress"
@@ -856,7 +907,7 @@ function MusicView({
             <span>{current.capability}</span>
             <p>
               {current.id === "netease"
-                ? "使用下方按钮打开网易云官方播放器。"
+                ? "点击下方按钮打开网易云官方歌单。"
                 : "点击歌单卡片，从 QQ 音乐官方页面播放。"}
             </p>
           </div>
@@ -874,40 +925,21 @@ function MusicView({
               <Headphones size={22} weight="fill" />
             </div>
             <div className="netease-player-fallback-copy">
-              <strong>iPhone 请在新页面播放</strong>
-              <p>Safari 会限制第三方内嵌播放器。新页面播放更稳定，返回后训练内容仍会保留。</p>
+              <strong>从官方页面打开</strong>
+              <p>歌单链接会保存在你的私人档案中，不读取音乐账号信息。</p>
             </div>
             <div className="netease-player-actions">
               <a
                 className="netease-player-primary"
-                href={neteasePlayerUrl(connections.netease.playlistId)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                打开网页播放器
-                <ArrowSquareOut size={16} weight="bold" />
-              </a>
-              <a
                 href={neteasePlaylistUrl(connections.netease.playlistId)}
                 target="_blank"
                 rel="noreferrer"
               >
                 在网易云打开歌单
+                <ArrowSquareOut size={16} weight="bold" />
               </a>
-              <button type="button" onClick={() => setShowNeteaseEmbed((value) => !value)}>
-                {showNeteaseEmbed ? "收起页面内播放器" : "尝试页面内播放"}
-              </button>
             </div>
           </div>
-          {showNeteaseEmbed && (
-            <iframe
-              title={`网易云歌单：${connections.netease.title}`}
-              src={neteasePlayerUrl(connections.netease.playlistId)}
-              loading="lazy"
-              allow="autoplay"
-              referrerPolicy="strict-origin-when-cross-origin"
-            />
-          )}
         </section>
       )}
 
@@ -923,13 +955,13 @@ function MusicView({
           </button>
         </div>
 
-        <div className="source-switcher" aria-label="音乐来源">
+        <div className={`source-switcher ${linksOnly ? "is-links-only" : ""}`} aria-label="音乐来源">
           {([
             ["all", "全部"],
             ["netease", "网易云"],
             ["qq", "QQ 音乐"],
-            ["local", "本地"],
-          ] as const).map(([value, label]) => (
+            ...(!linksOnly ? [["local", "本地"]] as const : []),
+          ] as readonly (readonly [MusicSource, string])[]).map(([value, label]) => (
             <button
               type="button"
               key={value}
@@ -974,7 +1006,7 @@ function MusicView({
         </div>
       </section>
 
-      {currentPlaylistId === "local" && (
+      {!linksOnly && currentPlaylistId === "local" && (
         <section className="local-audio-library" aria-labelledby="local-audio-title">
           <div className="section-heading music-section-heading">
             <div>
@@ -1018,18 +1050,18 @@ function MusicView({
         </section>
       )}
 
-      <section className="music-access-panel" aria-labelledby="music-access-title">
+      <section className={`music-access-panel ${linksOnly ? "is-links-only" : ""}`} aria-labelledby="music-access-title">
         <div>
           <Headphones size={24} weight="duotone" />
           <div>
-            <h2 id="music-access-title">三种播放方式</h2>
-            <p>不读取音乐账号 Cookie，也不会把本地音频上传到公开仓库。</p>
+            <h2 id="music-access-title">{linksOnly ? "两个官方入口" : "三种播放方式"}</h2>
+            <p>{linksOnly ? "只保存歌单链接，不读取网易云或 QQ 音乐账号。" : "不读取音乐账号 Cookie，也不会把本地音频上传到公开仓库。"}</p>
           </div>
         </div>
         <ol>
           <li><strong>网易云</strong><span>官方页面播放</span></li>
           <li><strong>QQ 音乐</strong><span>官方页面播放</span></li>
-          <li><strong>本地音频</strong><span>离线播放</span></li>
+          {!linksOnly && <li><strong>本地音频</strong><span>离线播放</span></li>}
         </ol>
       </section>
     </>
@@ -1042,12 +1074,14 @@ function MusicSetupSheet({
   onSaveNetease,
   onSaveQQ,
   onImportFiles,
+  linksOnly,
 }: {
   initialSource: MusicPlatform;
   onClose: () => void;
   onSaveNetease: (value: string, title: string) => string | null;
   onSaveQQ: (value: string, title: string) => string | null;
   onImportFiles: (files: File[]) => Promise<void>;
+  linksOnly: boolean;
 }) {
   const [source, setSource] = useState<MusicPlatform>(initialSource);
   const [value, setValue] = useState("");
@@ -1093,14 +1127,14 @@ function MusicSetupSheet({
         <div className="sheet-handle" />
         <IconButton label="关闭" onClick={onClose}><X size={22} /></IconButton>
         <h2 id="music-setup-title">添加训练音乐</h2>
-        <p>选择音乐来源。连接信息和本地音频仅保存在这台设备。</p>
+        <p>{linksOnly ? "歌单链接会保存到你的私人档案。" : "选择音乐来源。连接信息和本地音频仅保存在这台设备。"}</p>
 
         <div className="music-setup-sources" aria-label="选择音乐来源">
           {([
             ["netease", "网易云"],
             ["qq", "QQ 音乐"],
-            ["local", "本地音频"],
-          ] as const).map(([itemSource, label]) => (
+            ...(!linksOnly ? [["local", "本地音频"]] as const : []),
+          ] as readonly (readonly [MusicPlatform, string])[]).map(([itemSource, label]) => (
             <button
               type="button"
               key={itemSource}
@@ -1146,13 +1180,42 @@ function MusicSetupSheet({
             </label>
             <p className="music-form-help">
               {source === "netease"
-                ? "保存后可打开网易云官方播放器；页面内播放作为兼容选项。"
+                ? "保存后会跳转网易云官方页面或 App。"
                 : "保存后会通过 QQ 音乐官方页面或 App 打开。"}
             </p>
             <button className="primary-button" type="submit">保存连接</button>
           </form>
         )}
         {error && <div className="music-form-error" role="alert"><Warning size={17} />{error}</div>}
+      </section>
+    </div>
+  );
+}
+
+function LocalMigrationSheet({
+  snapshot,
+  onImport,
+  onSkip,
+}: {
+  snapshot: CloudSnapshot;
+  onImport: () => void;
+  onSkip: () => void;
+}) {
+  return (
+    <div className="sheet-backdrop" role="presentation">
+      <section className="install-sheet migration-sheet" role="dialog" aria-modal="true" aria-labelledby="migration-title">
+        <div className="migration-icon"><DownloadSimple size={28} weight="duotone" /></div>
+        <span>发现本机旧档案</span>
+        <h2 id="migration-title">导入到当前账号？</h2>
+        <p>导入后可以在其他设备登录查看，本机原数据仍会保留。</p>
+        <dl>
+          <div><dt>个人档案</dt><dd>{snapshot.trainingProfile ? "1 份" : "无"}</dd></div>
+          <div><dt>身体记录</dt><dd>{snapshot.bodyLogs.length} 条</dd></div>
+          <div><dt>训练记录</dt><dd>{snapshot.records.length} 条</dd></div>
+          <div><dt>歌单链接</dt><dd>{Number(Boolean(snapshot.connections.netease)) + Number(Boolean(snapshot.connections.qq))} 个</dd></div>
+        </dl>
+        <button className="primary-button" type="button" onClick={onImport}>导入我的档案</button>
+        <button className="migration-skip" type="button" onClick={onSkip}>暂不导入，创建空白档案</button>
       </section>
     </div>
   );
@@ -1222,13 +1285,19 @@ function InstallSheet({
   );
 }
 
-export default function FitnessApp() {
+export default function FitnessApp({
+  cloudSession,
+  account,
+}: {
+  cloudSession?: CloudSession;
+  account?: { displayName: string; onOpen: () => void };
+}) {
   const [tab, setTab] = useState<Tab>("today");
   const [records, setRecords] = useState<WorkoutRecord[]>([]);
   const [trainingProfile, setTrainingProfile] = useState<TrainingProfile | null>(null);
   const [bodyLogs, setBodyLogs] = useState<DailyCheckIn[]>([]);
   const [personalWorkout, setPersonalWorkout] = useState<PersonalizedWorkout | null>(null);
-  const [currentPlaylistId, setCurrentPlaylistId] = useState<MusicPlatform>("local");
+  const [currentPlaylistId, setCurrentPlaylistId] = useState<MusicPlatform>(cloudSession ? "netease" : "local");
   const [connections, setConnections] = useState<MusicConnections>({});
   const [localTracks, setLocalTracks] = useState<StoredAudioTrack[]>([]);
   const [activeTrackId, setActiveTrackId] = useState<string | null>(null);
@@ -1242,20 +1311,34 @@ export default function FitnessApp() {
   const [installOpen, setInstallOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<DeferredInstallPrompt | null>(null);
   const [message, setMessage] = useState("");
+  const [cloudLoading, setCloudLoading] = useState(Boolean(cloudSession));
+  const [migrationOpen, setMigrationOpen] = useState(false);
+  const [migrationSnapshot, setMigrationSnapshot] = useState<CloudSnapshot | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const pendingAutoplayRef = useRef(false);
+  const storageKeys = useMemo(() => {
+    const suffix = cloudSession ? `:${cloudSession.userId}` : "";
+    return {
+      records: `${STORAGE_KEY}${suffix}`,
+      connections: `${MUSIC_CONNECTIONS_KEY}${suffix}`,
+      profile: `${PROFILE_KEY}${suffix}`,
+      bodyLogs: `${BODY_LOGS_KEY}${suffix}`,
+      personalWorkout: `${PERSONAL_WORKOUT_KEY}${suffix}`,
+      dirty: `wenlian-cloud-dirty-v1${suffix}`,
+    };
+  }, [cloudSession?.userId]);
 
   useEffect(() => {
     try {
-      const stored = window.localStorage.getItem(STORAGE_KEY);
+      const stored = window.localStorage.getItem(storageKeys.records);
       if (stored) setRecords(JSON.parse(stored));
-      const storedConnections = window.localStorage.getItem(MUSIC_CONNECTIONS_KEY);
+      const storedConnections = window.localStorage.getItem(storageKeys.connections);
       if (storedConnections) setConnections(JSON.parse(storedConnections));
-      const storedProfile = window.localStorage.getItem(PROFILE_KEY);
+      const storedProfile = window.localStorage.getItem(storageKeys.profile);
       if (storedProfile) setTrainingProfile(JSON.parse(storedProfile));
-      const storedBodyLogs = window.localStorage.getItem(BODY_LOGS_KEY);
+      const storedBodyLogs = window.localStorage.getItem(storageKeys.bodyLogs);
       if (storedBodyLogs) setBodyLogs(JSON.parse(storedBodyLogs));
-      const storedPersonalWorkout = window.localStorage.getItem(PERSONAL_WORKOUT_KEY);
+      const storedPersonalWorkout = window.localStorage.getItem(storageKeys.personalWorkout);
       if (storedPersonalWorkout) setPersonalWorkout(JSON.parse(storedPersonalWorkout));
     } catch {
       setMessage("本地记录读取失败，请从 JSON 备份恢复。");
@@ -1273,21 +1356,78 @@ export default function FitnessApp() {
     };
     window.addEventListener("beforeinstallprompt", handleInstall);
     return () => window.removeEventListener("beforeinstallprompt", handleInstall);
-  }, []);
+  }, [storageKeys]);
 
   useEffect(() => {
+    if (cloudSession) {
+      setLocalTracks([]);
+      setActiveTrackId(null);
+      return;
+    }
     listStoredAudioTracks()
       .then((tracks) => {
         setLocalTracks(tracks);
         if (tracks[0]) setActiveTrackId(tracks[0].id);
       })
       .catch(() => setMessage("本地音频读取失败，可重新导入音频。"));
-  }, []);
+  }, [cloudSession]);
 
   useEffect(() => {
     if (!ready) return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-  }, [records, ready]);
+    window.localStorage.setItem(storageKeys.records, JSON.stringify(records));
+  }, [records, ready, storageKeys.records]);
+
+  useEffect(() => {
+    if (!ready || !cloudSession) return;
+    let active = true;
+    setCloudLoading(true);
+
+    const pendingSnapshot = readStoredSnapshot(storageKeys);
+    const flushPending = window.localStorage.getItem(storageKeys.dirty) === "1" && hasCloudData(pendingSnapshot)
+      ? importLocalSnapshot(cloudSession.client, cloudSession.userId, pendingSnapshot).then(() => {
+          window.localStorage.removeItem(storageKeys.dirty);
+        })
+      : Promise.resolve();
+
+    flushPending
+      .then(() => loadCloudSnapshot(cloudSession.client, cloudSession.userId))
+      .then((snapshot) => {
+        if (!active) return;
+        if (hasCloudData(snapshot)) {
+          setRecords(snapshot.records);
+          setConnections(snapshot.connections);
+          setTrainingProfile(snapshot.trainingProfile);
+          setBodyLogs(snapshot.bodyLogs);
+          setPersonalWorkout(snapshot.personalWorkout);
+          window.localStorage.setItem(storageKeys.records, JSON.stringify(snapshot.records));
+          window.localStorage.setItem(storageKeys.connections, JSON.stringify(snapshot.connections));
+          window.localStorage.setItem(storageKeys.profile, JSON.stringify(snapshot.trainingProfile));
+          window.localStorage.setItem(storageKeys.bodyLogs, JSON.stringify(snapshot.bodyLogs));
+          window.localStorage.setItem(storageKeys.personalWorkout, JSON.stringify(snapshot.personalWorkout));
+          return;
+        }
+
+        const scopedSnapshot = readStoredSnapshot(storageKeys);
+        const localSnapshot = hasCloudData(scopedSnapshot) ? scopedSnapshot : readStoredSnapshot(legacyStorageKeys());
+        if (hasCloudData(localSnapshot)) {
+          setRecords(localSnapshot.records);
+          setConnections(localSnapshot.connections);
+          setTrainingProfile(localSnapshot.trainingProfile);
+          setBodyLogs(localSnapshot.bodyLogs);
+          setPersonalWorkout(localSnapshot.personalWorkout);
+          setMigrationSnapshot(localSnapshot);
+          setMigrationOpen(true);
+        }
+      })
+      .catch(() => {
+        if (active) setMessage("云端档案暂时无法读取，本机缓存仍然保留。");
+      })
+      .finally(() => {
+        if (active) setCloudLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [cloudSession?.client, cloudSession?.userId, ready, storageKeys]);
 
   useEffect(() => {
     if (!message) return;
@@ -1322,8 +1462,9 @@ export default function FitnessApp() {
       (workout) => !weekRecords.some((record) => record.workoutId === workout.id),
     ) ?? workouts[3];
   const musicPlaylists = useMemo(
-    () => createMusicPlaylists(connections, localTracks, activeTrack),
-    [activeTrack, connections, localTracks],
+    () => createMusicPlaylists(connections, localTracks, activeTrack)
+      .filter((playlist) => !cloudSession || playlist.id !== "local"),
+    [activeTrack, cloudSession, connections, localTracks],
   );
   async function toggleMusic() {
     const audio = audioRef.current;
@@ -1397,7 +1538,14 @@ export default function FitnessApp() {
 
   function saveConnections(next: MusicConnections) {
     setConnections(next);
-    window.localStorage.setItem(MUSIC_CONNECTIONS_KEY, JSON.stringify(next));
+    window.localStorage.setItem(storageKeys.connections, JSON.stringify(next));
+    if (cloudSession) {
+      void saveCloudConnections(cloudSession.client, cloudSession.userId, next)
+        .catch(() => {
+          window.localStorage.setItem(storageKeys.dirty, "1");
+          setMessage("歌单已保存在本机，联网后会继续同步。");
+        });
+    }
   }
 
   function saveNeteaseConnection(value: string, title: string) {
@@ -1452,7 +1600,14 @@ export default function FitnessApp() {
 
   function saveTrainingProfile(profile: TrainingProfile) {
     setTrainingProfile(profile);
-    window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    window.localStorage.setItem(storageKeys.profile, JSON.stringify(profile));
+    if (cloudSession) {
+      void saveCloudProfile(cloudSession.client, cloudSession.userId, profile)
+        .catch(() => {
+          window.localStorage.setItem(storageKeys.dirty, "1");
+          setMessage("档案已保存在本机，联网后会继续同步。");
+        });
+    }
     setMessage("个人训练档案已保存。");
   }
 
@@ -1464,9 +1619,21 @@ export default function FitnessApp() {
     setTrainingProfile(updatedProfile);
     setBodyLogs(nextBodyLogs);
     setPersonalWorkout(nextWorkout);
-    window.localStorage.setItem(PROFILE_KEY, JSON.stringify(updatedProfile));
-    window.localStorage.setItem(BODY_LOGS_KEY, JSON.stringify(nextBodyLogs));
-    window.localStorage.setItem(PERSONAL_WORKOUT_KEY, JSON.stringify(nextWorkout));
+    window.localStorage.setItem(storageKeys.profile, JSON.stringify(updatedProfile));
+    window.localStorage.setItem(storageKeys.bodyLogs, JSON.stringify(nextBodyLogs));
+    window.localStorage.setItem(storageKeys.personalWorkout, JSON.stringify(nextWorkout));
+    if (cloudSession) {
+      void saveCloudCheckInAndPlan(
+        cloudSession.client,
+        cloudSession.userId,
+        updatedProfile,
+        checkIn,
+        nextWorkout,
+      ).catch(() => {
+        window.localStorage.setItem(storageKeys.dirty, "1");
+        setMessage("训练方案已保存在本机，联网后会继续同步。");
+      });
+    }
     setMessage(`${nextWorkout.title}已生成，可查看分析后开始。`);
   }
 
@@ -1492,9 +1659,45 @@ export default function FitnessApp() {
       exercises: activeWorkout.exercises,
     };
     setRecords((current) => [...current, record]);
+    if (cloudSession) {
+      void saveCloudRecord(cloudSession.client, cloudSession.userId, record)
+        .catch(() => {
+          window.localStorage.setItem(storageKeys.dirty, "1");
+          setMessage("训练已保存在本机，联网后会继续同步。");
+        });
+    }
     setActiveWorkout(null);
     setTab("records");
     setMessage("训练已保存。继续保持这个节奏。");
+  }
+
+  async function migrateLocalData() {
+    if (!cloudSession || !migrationSnapshot) return;
+    try {
+      await importLocalSnapshot(cloudSession.client, cloudSession.userId, migrationSnapshot);
+      window.localStorage.setItem(storageKeys.records, JSON.stringify(migrationSnapshot.records));
+      window.localStorage.setItem(storageKeys.connections, JSON.stringify(migrationSnapshot.connections));
+      window.localStorage.setItem(storageKeys.profile, JSON.stringify(migrationSnapshot.trainingProfile));
+      window.localStorage.setItem(storageKeys.bodyLogs, JSON.stringify(migrationSnapshot.bodyLogs));
+      window.localStorage.setItem(storageKeys.personalWorkout, JSON.stringify(migrationSnapshot.personalWorkout));
+      setMigrationOpen(false);
+      setMigrationSnapshot(null);
+      window.localStorage.removeItem(storageKeys.dirty);
+      setMessage("本机档案已导入当前账号。");
+    } catch {
+      setMessage("本机档案导入失败，数据仍保留在这部手机上。");
+    }
+  }
+
+  function skipLocalMigration() {
+    setRecords([]);
+    setConnections({});
+    setTrainingProfile(null);
+    setBodyLogs([]);
+    setPersonalWorkout(null);
+    setMigrationOpen(false);
+    setMigrationSnapshot(null);
+    setMessage("已为当前账号创建空白档案，本机旧数据没有删除。");
   }
 
   async function exportMarkdown() {
@@ -1550,15 +1753,15 @@ export default function FitnessApp() {
       setRecords(parsed.records);
       if (parsed.trainingProfile) {
         setTrainingProfile(parsed.trainingProfile);
-        window.localStorage.setItem(PROFILE_KEY, JSON.stringify(parsed.trainingProfile));
+        window.localStorage.setItem(storageKeys.profile, JSON.stringify(parsed.trainingProfile));
       }
       if (Array.isArray(parsed.bodyLogs)) {
         setBodyLogs(parsed.bodyLogs);
-        window.localStorage.setItem(BODY_LOGS_KEY, JSON.stringify(parsed.bodyLogs));
+        window.localStorage.setItem(storageKeys.bodyLogs, JSON.stringify(parsed.bodyLogs));
       }
       if (parsed.personalWorkout) {
         setPersonalWorkout(parsed.personalWorkout);
-        window.localStorage.setItem(PERSONAL_WORKOUT_KEY, JSON.stringify(parsed.personalWorkout));
+        window.localStorage.setItem(storageKeys.personalWorkout, JSON.stringify(parsed.personalWorkout));
       }
       setMessage(`已恢复 ${parsed.records.length} 条训练记录。`);
     } catch {
@@ -1566,11 +1769,11 @@ export default function FitnessApp() {
     }
   }
 
-  if (!ready) {
+  if (!ready || cloudLoading) {
     return (
       <main className="loading-shell" role="status" aria-live="polite">
         <Barbell size={38} weight="duotone" />
-        <span>正在载入训练计划</span>
+        <span>{cloudLoading ? "正在载入私人档案" : "正在载入训练计划"}</span>
       </main>
     );
   }
@@ -1623,6 +1826,15 @@ export default function FitnessApp() {
     {audioPlayer}
     <div className={`app-shell ${tab !== "music" && activeTrack ? "has-mini-player" : ""}`}>
       <main className="content-shell">
+        {account && (
+          <div className="account-bar">
+            <span><CheckCircle size={16} weight="fill" />私人档案已同步</span>
+            <button type="button" onClick={account.onOpen} aria-label="打开账号设置">
+              <UserCircle size={20} weight="duotone" />
+              {account.displayName}
+            </button>
+          </div>
+        )}
         {tab === "today" && (
           <TodayView
             weekRecords={weekRecords}
@@ -1661,6 +1873,7 @@ export default function FitnessApp() {
             onPrevious={() => moveTrack(-1)}
             onNext={() => moveTrack(1)}
             onRemoveTrack={(track) => void removeLocalTrack(track)}
+            linksOnly={Boolean(cloudSession)}
           />
         )}
         {tab === "records" && (
@@ -1745,6 +1958,14 @@ export default function FitnessApp() {
           onSaveNetease={saveNeteaseConnection}
           onSaveQQ={saveQQConnection}
           onImportFiles={importAudioFiles}
+          linksOnly={Boolean(cloudSession)}
+        />
+      )}
+      {migrationOpen && migrationSnapshot && (
+        <LocalMigrationSheet
+          snapshot={migrationSnapshot}
+          onImport={() => void migrateLocalData()}
+          onSkip={skipLocalMigration}
         />
       )}
       {message && (
