@@ -39,6 +39,14 @@ import {
   saveAudioFiles,
   StoredAudioTrack,
 } from "./music-storage";
+import PersonalPlanner from "./PersonalPlanner";
+import {
+  createPersonalizedWorkout,
+  DailyCheckIn,
+  PersonalizedWorkout,
+  targetLabels,
+  TrainingProfile,
+} from "./training-planner";
 import { Exercise, Workout, workouts } from "./workouts";
 
 type Tab = "today" | "plan" | "music" | "records";
@@ -81,6 +89,7 @@ type WorkoutRecord = {
   durationMinutes: number;
   note: string;
   entries: Record<string, ExerciseEntry>;
+  exercises?: Exercise[];
 };
 
 type DeferredInstallPrompt = Event & {
@@ -90,7 +99,10 @@ type DeferredInstallPrompt = Event & {
 
 const STORAGE_KEY = "wenlian-records-v1";
 const MUSIC_CONNECTIONS_KEY = "wenlian-music-connections-v1";
-const BACKUP_VERSION = 1;
+const PROFILE_KEY = "wenlian-training-profile-v1";
+const BODY_LOGS_KEY = "wenlian-body-logs-v1";
+const PERSONAL_WORKOUT_KEY = "wenlian-personal-workout-v1";
+const BACKUP_VERSION = 2;
 
 function createMusicPlaylists(
   connections: MusicConnections,
@@ -197,7 +209,11 @@ function downloadFile(file: File) {
   URL.revokeObjectURL(url);
 }
 
-function entriesToMarkdown(records: WorkoutRecord[]) {
+function entriesToMarkdown(
+  records: WorkoutRecord[],
+  profile: TrainingProfile | null,
+  bodyLogs: DailyCheckIn[],
+) {
   const sorted = [...records].sort((a, b) => b.finishedAt.localeCompare(a.finishedAt));
   const lines = [
     "---",
@@ -213,12 +229,39 @@ function entriesToMarkdown(records: WorkoutRecord[]) {
     "",
   ];
 
+  if (profile) {
+    lines.push(
+      "## 个人训练档案",
+      "",
+      `- 称呼：${profile.name}`,
+      `- 年龄：${profile.age}`,
+      `- 身高：${profile.heightCm} cm`,
+      `- 当前体重：${profile.weightKg} kg`,
+      `- 每周训练：${profile.weeklyDays} 天`,
+      "",
+    );
+  }
+
+  if (bodyLogs.length) {
+    lines.push(
+      "## 最近身体状态",
+      "",
+      "| 日期 | 体重 | 睡眠 | 精力 | 训练部位 |",
+      "|---|---:|---:|---:|---|",
+      ...bodyLogs.slice(0, 12).map((item) =>
+        `| ${item.date} | ${item.weightKg} kg | ${item.sleepHours} h | ${item.energy}/5 | ${targetLabels[item.target]} |`,
+      ),
+      "",
+    );
+  }
+
   if (sorted.length === 0) {
     lines.push("暂无已完成训练。");
   }
 
   sorted.forEach((record) => {
     const workout = workouts.find((item) => item.id === record.workoutId);
+    const recordExercises = record.exercises ?? workout?.exercises ?? [];
     lines.push(
       `## ${record.date} ${record.shortName}：${record.title}`,
       "",
@@ -229,7 +272,7 @@ function entriesToMarkdown(records: WorkoutRecord[]) {
       "| 动作 | 完成组数 | 重量 | 实际次数 | RPE |",
       "|---|---:|---:|---:|---:|",
     );
-    workout?.exercises.forEach((exercise) => {
+    recordExercises.forEach((exercise) => {
       const entry = record.entries[exercise.id];
       if (!entry) return;
       lines.push(
@@ -475,16 +518,18 @@ function TodayView({
   onStart,
   onOpenPlan,
   onInstall,
+  weeklyGoal,
 }: {
   weekRecords: WorkoutRecord[];
   nextWorkout: Workout;
   onStart: (workout: Workout) => void;
   onOpenPlan: () => void;
   onInstall: () => void;
+  weeklyGoal: 3 | 4;
 }) {
-  const coreCount = new Set(
+  const coreCount = Math.min(weeklyGoal, new Set(
     weekRecords.filter((record) => !record.optional).map((record) => record.workoutId),
-  ).size;
+  ).size);
   const optionalDone = weekRecords.some((record) => record.optional);
   const week = currentWeekKeys();
 
@@ -504,10 +549,10 @@ function TodayView({
       <section className="week-overview">
         <div>
           <span>本周训练</span>
-          <h2>{coreCount === 3 ? "三次主训练已完成" : "保持节奏，继续下一练"}</h2>
+          <h2>{coreCount === weeklyGoal ? `本周 ${weeklyGoal} 次训练已完成` : "保持节奏，继续下一练"}</h2>
           <p>{week.label}</p>
         </div>
-        <ProgressRing value={coreCount} total={3} />
+        <ProgressRing value={coreCount} total={weeklyGoal} />
       </section>
 
       <section className="next-workout">
@@ -539,7 +584,7 @@ function TodayView({
         <div className="section-heading">
           <div>
             <h2>本周路线</h2>
-            <p>三次力量训练，第 4 天按恢复情况选择。</p>
+            <p>每周目标 {weeklyGoal} 次，根据恢复情况安排间隔。</p>
           </div>
           <button type="button" onClick={onOpenPlan}>
             查看计划
@@ -570,61 +615,6 @@ function TodayView({
         <Warning size={22} weight="duotone" />
         <p>如果出现锐痛、麻木或关节不适，立即停止该动作。新动作先用轻重量。</p>
       </aside>
-    </>
-  );
-}
-
-function PlanView({
-  weekRecords,
-  onStart,
-}: {
-  weekRecords: WorkoutRecord[];
-  onStart: (workout: Workout) => void;
-}) {
-  return (
-    <>
-      <header className="page-heading">
-        <span>推荐安排</span>
-        <h1>三练为主，四练可选</h1>
-        <p>建议周一、周三、周五训练。如果错过一天，下次从未完成的那天继续。</p>
-      </header>
-
-      <section className="plan-stack">
-        {workouts.map((workout) => {
-          const done = weekRecords.some((record) => record.workoutId === workout.id);
-          return (
-            <article className="plan-card" key={workout.id}>
-              <div className="plan-card-header">
-                <div>
-                  <span>{workout.shortName}</span>
-                  <h2>{workout.title}</h2>
-                  <p>{workout.focus}</p>
-                </div>
-                <div className={`completion-mark ${done ? "done" : ""}`}>
-                  {done ? <CheckCircle size={25} weight="fill" /> : <Barbell size={24} />}
-                </div>
-              </div>
-              <div className="plan-meta">
-                <span>{workout.schedule}</span>
-                <span>{workout.duration}</span>
-                <span>{workout.exercises.length} 个动作</span>
-              </div>
-              <div className="exercise-strip">
-                {workout.exercises.slice(0, 4).map((exercise) => (
-                  <div key={exercise.id}>
-                    <ExerciseThumb exercise={exercise} />
-                    <span>{exercise.name}</span>
-                  </div>
-                ))}
-              </div>
-              <button className="secondary-button" type="button" onClick={() => onStart(workout)}>
-                {done ? "再练一次" : "开始这组"}
-                <ArrowRight size={19} />
-              </button>
-            </article>
-          );
-        })}
-      </section>
     </>
   );
 }
@@ -1201,6 +1191,9 @@ function InstallSheet({
 export default function FitnessApp() {
   const [tab, setTab] = useState<Tab>("today");
   const [records, setRecords] = useState<WorkoutRecord[]>([]);
+  const [trainingProfile, setTrainingProfile] = useState<TrainingProfile | null>(null);
+  const [bodyLogs, setBodyLogs] = useState<DailyCheckIn[]>([]);
+  const [personalWorkout, setPersonalWorkout] = useState<PersonalizedWorkout | null>(null);
   const [currentPlaylistId, setCurrentPlaylistId] = useState<MusicPlatform>("local");
   const [connections, setConnections] = useState<MusicConnections>({});
   const [localTracks, setLocalTracks] = useState<StoredAudioTrack[]>([]);
@@ -1224,6 +1217,12 @@ export default function FitnessApp() {
       if (stored) setRecords(JSON.parse(stored));
       const storedConnections = window.localStorage.getItem(MUSIC_CONNECTIONS_KEY);
       if (storedConnections) setConnections(JSON.parse(storedConnections));
+      const storedProfile = window.localStorage.getItem(PROFILE_KEY);
+      if (storedProfile) setTrainingProfile(JSON.parse(storedProfile));
+      const storedBodyLogs = window.localStorage.getItem(BODY_LOGS_KEY);
+      if (storedBodyLogs) setBodyLogs(JSON.parse(storedBodyLogs));
+      const storedPersonalWorkout = window.localStorage.getItem(PERSONAL_WORKOUT_KEY);
+      if (storedPersonalWorkout) setPersonalWorkout(JSON.parse(storedPersonalWorkout));
     } catch {
       setMessage("本地记录读取失败，请从 JSON 备份恢复。");
     } finally {
@@ -1417,6 +1416,26 @@ export default function FitnessApp() {
     setMessage("本地音频已删除。");
   }
 
+  function saveTrainingProfile(profile: TrainingProfile) {
+    setTrainingProfile(profile);
+    window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    setMessage("个人训练档案已保存。");
+  }
+
+  function generatePersonalWorkout(checkIn: DailyCheckIn) {
+    if (!trainingProfile) return;
+    const updatedProfile = { ...trainingProfile, weightKg: checkIn.weightKg };
+    const nextWorkout = createPersonalizedWorkout(updatedProfile, checkIn);
+    const nextBodyLogs = [checkIn, ...bodyLogs.filter((item) => item.id !== checkIn.id)].slice(0, 120);
+    setTrainingProfile(updatedProfile);
+    setBodyLogs(nextBodyLogs);
+    setPersonalWorkout(nextWorkout);
+    window.localStorage.setItem(PROFILE_KEY, JSON.stringify(updatedProfile));
+    window.localStorage.setItem(BODY_LOGS_KEY, JSON.stringify(nextBodyLogs));
+    window.localStorage.setItem(PERSONAL_WORKOUT_KEY, JSON.stringify(nextWorkout));
+    setMessage(`${nextWorkout.title}已生成，可查看分析后开始。`);
+  }
+
   function finishWorkout(
     entries: Record<string, ExerciseEntry>,
     note: string,
@@ -1436,6 +1455,7 @@ export default function FitnessApp() {
       durationMinutes: Math.max(1, Math.round(seconds / 60)),
       note: note.trim(),
       entries,
+      exercises: activeWorkout.exercises,
     };
     setRecords((current) => [...current, record]);
     setActiveWorkout(null);
@@ -1444,7 +1464,7 @@ export default function FitnessApp() {
   }
 
   async function exportMarkdown() {
-    const content = entriesToMarkdown(records);
+    const content = entriesToMarkdown(records, trainingProfile, bodyLogs);
     const file = new File([content], `稳练训练记录-${localDateKey()}.md`, {
       type: "text/markdown",
     });
@@ -1469,7 +1489,14 @@ export default function FitnessApp() {
 
   function exportJson() {
     const file = new File(
-      [JSON.stringify({ version: BACKUP_VERSION, exportedAt: new Date().toISOString(), records }, null, 2)],
+      [JSON.stringify({
+        version: BACKUP_VERSION,
+        exportedAt: new Date().toISOString(),
+        records,
+        trainingProfile,
+        bodyLogs,
+        personalWorkout,
+      }, null, 2)],
       `稳练备份-${localDateKey()}.json`,
       { type: "application/json" },
     );
@@ -1483,10 +1510,22 @@ export default function FitnessApp() {
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
-      if (parsed.version !== BACKUP_VERSION || !Array.isArray(parsed.records)) {
+      if (![1, BACKUP_VERSION].includes(parsed.version) || !Array.isArray(parsed.records)) {
         throw new Error("invalid");
       }
       setRecords(parsed.records);
+      if (parsed.trainingProfile) {
+        setTrainingProfile(parsed.trainingProfile);
+        window.localStorage.setItem(PROFILE_KEY, JSON.stringify(parsed.trainingProfile));
+      }
+      if (Array.isArray(parsed.bodyLogs)) {
+        setBodyLogs(parsed.bodyLogs);
+        window.localStorage.setItem(BODY_LOGS_KEY, JSON.stringify(parsed.bodyLogs));
+      }
+      if (parsed.personalWorkout) {
+        setPersonalWorkout(parsed.personalWorkout);
+        window.localStorage.setItem(PERSONAL_WORKOUT_KEY, JSON.stringify(parsed.personalWorkout));
+      }
       setMessage(`已恢复 ${parsed.records.length} 条训练记录。`);
     } catch {
       setMessage("无法识别这个备份文件，请选择稳练导出的 JSON。");
@@ -1553,14 +1592,22 @@ export default function FitnessApp() {
         {tab === "today" && (
           <TodayView
             weekRecords={weekRecords}
-            nextWorkout={nextWorkout}
+            nextWorkout={personalWorkout ?? nextWorkout}
             onStart={setActiveWorkout}
             onOpenPlan={() => setTab("plan")}
             onInstall={() => setInstallOpen(true)}
+            weeklyGoal={trainingProfile?.weeklyDays ?? 3}
           />
         )}
         {tab === "plan" && (
-          <PlanView weekRecords={weekRecords} onStart={setActiveWorkout} />
+          <PersonalPlanner
+            profile={trainingProfile}
+            checkIns={bodyLogs}
+            workout={personalWorkout}
+            onSaveProfile={saveTrainingProfile}
+            onGenerate={generatePersonalWorkout}
+            onStart={setActiveWorkout}
+          />
         )}
         {tab === "music" && (
           <MusicView

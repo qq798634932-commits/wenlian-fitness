@@ -1,7 +1,7 @@
 {
   "name": "稳练 - 三日健身计划",
   "short_name": "稳练",
-  "description": "三日健身计划、动作 GIF、训练记录与 Obsidian 导出。",
+  "description": "个性化健身计划、完整动作库、训练音乐、身体记录与 Obsidian 导出。",
   "lang": "zh-CN",
   "start_url": "./",
   "scope": "./",

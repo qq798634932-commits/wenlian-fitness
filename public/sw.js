@@ -1,10 +1,11 @@
-const CACHE_NAME = "wenlian-v3";
+const CACHE_NAME = "wenlian-v4";
 const BASE_URL = new URL("./", self.location.href);
 const APP_ASSETS = [
   "./",
   "manifest.webmanifest",
   "icon-512.png",
   "apple-touch-icon.png",
+  "data/exercises.zh.json",
   "gifs/0043-qXTaZnJ.gif",
   "gifs/0025-EIeI8Vf.gif",
   "gifs/0861-fUBheHs.gif",
