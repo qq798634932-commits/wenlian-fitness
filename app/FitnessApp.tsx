@@ -27,7 +27,7 @@ import {
   Warning,
   X,
 } from "@phosphor-icons/react";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MusicPlatform,
   neteasePlaylistUrl,
@@ -89,6 +89,16 @@ type ExerciseEntry = {
   rpe: string;
 };
 
+type WorkoutSessionDraft = {
+  version: 1;
+  workout: Workout;
+  entries: Record<string, ExerciseEntry>;
+  note: string;
+  seconds: number;
+  scrollY: number;
+  updatedAt: string;
+};
+
 export type WorkoutRecord = {
   id: string;
   workoutId: string;
@@ -114,6 +124,7 @@ const MUSIC_CONNECTIONS_KEY = "wenlian-music-connections-v1";
 const PROFILE_KEY = "wenlian-training-profile-v1";
 const BODY_LOGS_KEY = "wenlian-body-logs-v1";
 const PERSONAL_WORKOUT_KEY = "wenlian-personal-workout-v1";
+const ACTIVE_WORKOUT_KEY = "wenlian-active-workout-v1";
 const BACKUP_VERSION = 2;
 
 type StorageKeys = {
@@ -122,6 +133,7 @@ type StorageKeys = {
   profile: string;
   bodyLogs: string;
   personalWorkout: string;
+  activeWorkout: string;
   dirty: string;
 };
 
@@ -144,6 +156,32 @@ function readStoredSnapshot(keys: StorageKeys): CloudSnapshot {
   };
 }
 
+function readWorkoutDraft(key: string) {
+  const draft = parseStoredValue<WorkoutSessionDraft | null>(key, null);
+  if (
+    draft?.version !== 1 ||
+    !draft.workout?.id ||
+    !Array.isArray(draft.workout.exercises) ||
+    !draft.entries ||
+    typeof draft.seconds !== "number"
+  ) {
+    return null;
+  }
+  return draft;
+}
+
+function createWorkoutDraft(workout: Workout): WorkoutSessionDraft {
+  return {
+    version: 1,
+    workout,
+    entries: createEntries(workout),
+    note: "",
+    seconds: 0,
+    scrollY: 0,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
 function legacyStorageKeys(): StorageKeys {
   return {
     records: STORAGE_KEY,
@@ -151,6 +189,7 @@ function legacyStorageKeys(): StorageKeys {
     profile: PROFILE_KEY,
     bodyLogs: BODY_LOGS_KEY,
     personalWorkout: PERSONAL_WORKOUT_KEY,
+    activeWorkout: ACTIVE_WORKOUT_KEY,
     dirty: "wenlian-cloud-dirty-v1",
   };
 }
@@ -391,23 +430,91 @@ function ExerciseThumb({ exercise, priority = false }: { exercise: Exercise; pri
 
 function WorkoutSession({
   workout,
+  initialDraft,
+  onDraftChange,
   onExit,
   onFinish,
 }: {
   workout: Workout;
+  initialDraft: WorkoutSessionDraft | null;
+  onDraftChange: (draft: WorkoutSessionDraft) => void;
   onExit: () => void;
   onFinish: (entries: Record<string, ExerciseEntry>, note: string, seconds: number) => void;
 }) {
-  const [entries, setEntries] = useState<Record<string, ExerciseEntry>>(() =>
-    createEntries(workout),
-  );
-  const [note, setNote] = useState("");
-  const [seconds, setSeconds] = useState(0);
+  const restoredDraft = initialDraft?.workout.id === workout.id ? initialDraft : null;
+  const [entries, setEntries] = useState<Record<string, ExerciseEntry>>(() => {
+    const empty = createEntries(workout);
+    if (!restoredDraft) return empty;
+    return Object.fromEntries(
+      workout.exercises.map((exercise) => [
+        exercise.id,
+        { ...empty[exercise.id], ...restoredDraft.entries[exercise.id] },
+      ]),
+    );
+  });
+  const [note, setNote] = useState(restoredDraft?.note ?? "");
+  const [seconds, setSeconds] = useState(restoredDraft?.seconds ?? 0);
+  const scrollYRef = useRef(restoredDraft?.scrollY ?? 0);
 
   useEffect(() => {
     const timer = window.setInterval(() => setSeconds((value) => value + 1), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!restoredDraft?.scrollY) return;
+    const restorePosition = () => window.scrollTo({ top: restoredDraft.scrollY, behavior: "auto" });
+    const frame = window.requestAnimationFrame(() => window.requestAnimationFrame(restorePosition));
+    const fallback = window.setTimeout(restorePosition, 300);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(fallback);
+    };
+  }, [restoredDraft?.workout.id]);
+
+  useEffect(() => {
+    const saveDraft = () => onDraftChange({
+      version: 1,
+      workout,
+      entries,
+      note,
+      seconds,
+      scrollY: window.scrollY,
+      updatedAt: new Date().toISOString(),
+    });
+    const saveBeforeSuspension = () => {
+      onDraftChange({
+        version: 1,
+        workout,
+        entries,
+        note,
+        seconds,
+        scrollY: scrollYRef.current,
+        updatedAt: new Date().toISOString(),
+      });
+    };
+    let lastScrollSave = 0;
+    const trackScroll = () => {
+      scrollYRef.current = window.scrollY;
+      const now = Date.now();
+      if (now - lastScrollSave < 200) return;
+      lastScrollSave = now;
+      saveBeforeSuspension();
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState !== "visible") saveBeforeSuspension();
+    };
+
+    saveDraft();
+    window.addEventListener("scroll", trackScroll, { passive: true });
+    window.addEventListener("pagehide", saveBeforeSuspension);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("scroll", trackScroll);
+      window.removeEventListener("pagehide", saveBeforeSuspension);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [entries, note, onDraftChange, seconds, workout]);
 
   const completed = workout.exercises.filter(
     (exercise) => entries[exercise.id].completedSets >= exercise.sets,
@@ -446,7 +553,7 @@ function WorkoutSession({
       </header>
 
       <div className="session-progress">
-        <span>动作进度</span>
+        <span>{restoredDraft ? "已恢复上次进度" : "动作进度"}</span>
         <strong>
           {completed}/{workout.exercises.length}
         </strong>
@@ -1308,6 +1415,7 @@ export default function FitnessApp({
   const [musicSetupSource, setMusicSetupSource] = useState<MusicPlatform>("netease");
   const [ready, setReady] = useState(false);
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
+  const [activeWorkoutDraft, setActiveWorkoutDraft] = useState<WorkoutSessionDraft | null>(null);
   const [installOpen, setInstallOpen] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<DeferredInstallPrompt | null>(null);
   const [message, setMessage] = useState("");
@@ -1316,6 +1424,7 @@ export default function FitnessApp({
   const [migrationSnapshot, setMigrationSnapshot] = useState<CloudSnapshot | null>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const pendingAutoplayRef = useRef(false);
+  const activeWorkoutRef = useRef<Workout | null>(null);
   const storageKeys = useMemo(() => {
     const suffix = cloudSession ? `:${cloudSession.userId}` : "";
     return {
@@ -1324,6 +1433,7 @@ export default function FitnessApp({
       profile: `${PROFILE_KEY}${suffix}`,
       bodyLogs: `${BODY_LOGS_KEY}${suffix}`,
       personalWorkout: `${PERSONAL_WORKOUT_KEY}${suffix}`,
+      activeWorkout: `${ACTIVE_WORKOUT_KEY}${suffix}`,
       dirty: `wenlian-cloud-dirty-v1${suffix}`,
     };
   }, [cloudSession?.userId]);
@@ -1340,6 +1450,12 @@ export default function FitnessApp({
       if (storedBodyLogs) setBodyLogs(JSON.parse(storedBodyLogs));
       const storedPersonalWorkout = window.localStorage.getItem(storageKeys.personalWorkout);
       if (storedPersonalWorkout) setPersonalWorkout(JSON.parse(storedPersonalWorkout));
+      const storedWorkoutDraft = readWorkoutDraft(storageKeys.activeWorkout);
+      if (storedWorkoutDraft) {
+        activeWorkoutRef.current = storedWorkoutDraft.workout;
+        setActiveWorkoutDraft(storedWorkoutDraft);
+        setActiveWorkout(storedWorkoutDraft.workout);
+      }
     } catch {
       setMessage("本地记录读取失败，请从 JSON 备份恢复。");
     } finally {
@@ -1349,6 +1465,7 @@ export default function FitnessApp({
     let refreshingForUpdate = false;
     const handleServiceWorkerUpdate = () => {
       if (refreshingForUpdate) return;
+      if (activeWorkoutRef.current) return;
       refreshingForUpdate = true;
       window.location.reload();
     };
@@ -1372,6 +1489,10 @@ export default function FitnessApp({
       }
     };
   }, [storageKeys]);
+
+  useEffect(() => {
+    activeWorkoutRef.current = activeWorkout;
+  }, [activeWorkout]);
 
   useEffect(() => {
     if (cloudSession) {
@@ -1652,6 +1773,25 @@ export default function FitnessApp({
     setMessage(`${nextWorkout.title}已生成，可查看分析后开始。`);
   }
 
+  const saveActiveWorkoutDraft = useCallback((draft: WorkoutSessionDraft) => {
+    window.localStorage.setItem(storageKeys.activeWorkout, JSON.stringify(draft));
+  }, [storageKeys.activeWorkout]);
+
+  function startWorkout(workout: Workout) {
+    const draft = createWorkoutDraft(workout);
+    saveActiveWorkoutDraft(draft);
+    activeWorkoutRef.current = workout;
+    setActiveWorkoutDraft(null);
+    setActiveWorkout(workout);
+  }
+
+  function clearActiveWorkout() {
+    window.localStorage.removeItem(storageKeys.activeWorkout);
+    activeWorkoutRef.current = null;
+    setActiveWorkoutDraft(null);
+    setActiveWorkout(null);
+  }
+
   function finishWorkout(
     entries: Record<string, ExerciseEntry>,
     note: string,
@@ -1681,7 +1821,7 @@ export default function FitnessApp({
           setMessage("训练已保存在本机，联网后会继续同步。");
         });
     }
-    setActiveWorkout(null);
+    clearActiveWorkout();
     setTab("records");
     setMessage("训练已保存。继续保持这个节奏。");
   }
@@ -1825,9 +1965,11 @@ export default function FitnessApp({
         {audioPlayer}
         <WorkoutSession
           workout={activeWorkout}
+          initialDraft={activeWorkoutDraft}
+          onDraftChange={saveActiveWorkoutDraft}
           onExit={() => {
             if (window.confirm("退出后，本次未保存的记录会丢失。确定退出吗？")) {
-              setActiveWorkout(null);
+              clearActiveWorkout();
             }
           }}
           onFinish={finishWorkout}
@@ -1854,7 +1996,7 @@ export default function FitnessApp({
           <TodayView
             weekRecords={weekRecords}
             nextWorkout={personalWorkout ?? nextWorkout}
-            onStart={setActiveWorkout}
+            onStart={startWorkout}
             onOpenPlan={() => setTab("plan")}
             onInstall={() => setInstallOpen(true)}
             weeklyGoal={trainingProfile?.weeklyDays ?? 3}
@@ -1867,7 +2009,7 @@ export default function FitnessApp({
             workout={personalWorkout}
             onSaveProfile={saveTrainingProfile}
             onGenerate={generatePersonalWorkout}
-            onStart={setActiveWorkout}
+            onStart={startWorkout}
           />
         )}
         {tab === "music" && (

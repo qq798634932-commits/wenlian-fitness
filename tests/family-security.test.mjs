@@ -83,7 +83,7 @@ test("service worker never intercepts Supabase cross-origin requests", async () 
 
 test("auth navigations bypass stale app-shell caches", async () => {
   const serviceWorker = await readFile(serviceWorkerPath, "utf8");
-  assert.match(serviceWorker, /CACHE_NAME = "wenlian-v10"/);
+  assert.match(serviceWorker, /CACHE_NAME = "wenlian-v11"/);
   assert.match(serviceWorker, /"admin\.html"/);
   assert.match(serviceWorker, /event\.request\.mode === "navigate"/);
   assert.match(serviceWorker, /fetch\(event\.request, \{ cache: "no-store" \}\)/);
