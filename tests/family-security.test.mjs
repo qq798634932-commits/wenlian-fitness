@@ -49,6 +49,13 @@ test("service worker never intercepts Supabase cross-origin requests", async () 
   assert.match(serviceWorker, /origin !== self\.location\.origin/);
 });
 
+test("auth navigations bypass stale app-shell caches", async () => {
+  const serviceWorker = await readFile(serviceWorkerPath, "utf8");
+  assert.match(serviceWorker, /CACHE_NAME = "wenlian-v8"/);
+  assert.match(serviceWorker, /event\.request\.mode === "navigate"/);
+  assert.match(serviceWorker, /fetch\(event\.request, \{ cache: "no-store" \}\)/);
+});
+
 test("mobile magic links do not depend on the requesting browser PKCE verifier", async () => {
   const client = await readFile(cloudClientPath, "utf8");
   assert.match(client, /flowType: "implicit"/);

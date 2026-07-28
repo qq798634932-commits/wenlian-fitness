@@ -1346,8 +1346,18 @@ export default function FitnessApp({
       setReady(true);
     }
 
+    let refreshingForUpdate = false;
+    const handleServiceWorkerUpdate = () => {
+      if (refreshingForUpdate) return;
+      refreshingForUpdate = true;
+      window.location.reload();
+    };
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js").catch(() => undefined);
+      navigator.serviceWorker.addEventListener("controllerchange", handleServiceWorkerUpdate);
+      navigator.serviceWorker
+        .register("./sw.js")
+        .then((registration) => registration.update())
+        .catch(() => undefined);
     }
 
     const handleInstall = (event: Event) => {
@@ -1355,7 +1365,12 @@ export default function FitnessApp({
       setDeferredPrompt(event as DeferredInstallPrompt);
     };
     window.addEventListener("beforeinstallprompt", handleInstall);
-    return () => window.removeEventListener("beforeinstallprompt", handleInstall);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleInstall);
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener("controllerchange", handleServiceWorkerUpdate);
+      }
+    };
   }, [storageKeys]);
 
   useEffect(() => {

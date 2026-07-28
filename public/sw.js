@@ -1,4 +1,4 @@
-const CACHE_NAME = "wenlian-v7";
+const CACHE_NAME = "wenlian-v8";
 const BASE_URL = new URL("./", self.location.href);
 const APP_ASSETS = [
   "./",
@@ -52,12 +52,35 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
-  if (new URL(event.request.url).origin !== self.location.origin) return;
+  const requestUrl = new URL(event.request.url);
+  if (requestUrl.origin !== self.location.origin) return;
+
+  // Authentication data lives in the navigation URL. Always ask the network
+  // for pages and runtime configuration first so an old cached app shell can
+  // never handle a new magic-link callback.
+  if (event.request.mode === "navigate" || requestUrl.pathname.endsWith("/app-config.js")) {
+    event.respondWith(
+      fetch(event.request, { cache: "no-store" })
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        })
+        .catch(async () => {
+          const exact = await caches.match(event.request);
+          return exact ?? caches.match(BASE_URL.toString());
+        }),
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const network = fetch(event.request)
         .then((response) => {
-          if (response.ok && new URL(event.request.url).origin === self.location.origin) {
+          if (response.ok) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
