@@ -34,7 +34,7 @@ if (liveMode) {
   await page.getByRole("button", { name: "已有账号" }).click();
   await page.getByLabel("登录号").fill(liveLoginId);
   await page.getByLabel("6位数字密码", { exact: true }).fill(livePin);
-  await page.getByRole("button", { name: "登录", exact: true }).click();
+  await page.getByRole("button", { name: "进入我的档案", exact: true }).click();
   await page.getByText("私人档案已同步").waitFor({ timeout: 30_000 });
 }
 await page.getByRole("button", { name: "开始训练" }).click();
@@ -61,7 +61,8 @@ const scrollBefore = await page.evaluate(() => window.scrollY);
 assert.ok(scrollBefore > 300);
 await page.waitForTimeout(250);
 const storedScroll = await page.evaluate(() => {
-  const value = window.localStorage.getItem("wenlian-active-workout-v1");
+  const key = Object.keys(window.localStorage).find((item) => item.startsWith("wenlian-active-workout-v1"));
+  const value = key ? window.localStorage.getItem(key) : null;
   return value ? JSON.parse(value).scrollY : null;
 });
 assert.ok(Math.abs(storedScroll - scrollBefore) < 100, `stored scroll position is ${storedScroll}, expected ${scrollBefore}`);
