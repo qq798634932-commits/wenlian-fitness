@@ -48,7 +48,10 @@ export function getSupabaseClient() {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      flowType: "pkce",
+      // This is a client-only static app. Implicit auth lets a magic link opened
+      // from iOS Mail/Gmail establish the session in Safari even when the link
+      // was requested from a different browser context.
+      flowType: "implicit",
     },
   });
   return singleton;

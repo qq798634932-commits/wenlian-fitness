@@ -5,6 +5,8 @@ import test from "node:test";
 const migrationPath = new URL("../supabase/migrations/202607270001_family_accounts.sql", import.meta.url);
 const configPath = new URL("../public/app-config.js", import.meta.url);
 const appPath = new URL("../app/FitnessApp.tsx", import.meta.url);
+const authGatePath = new URL("../app/FamilyAuthGate.tsx", import.meta.url);
+const cloudClientPath = new URL("../app/cloud/client.ts", import.meta.url);
 const serviceWorkerPath = new URL("../public/sw.js", import.meta.url);
 
 test("uninvited auth users are disabled by default", async () => {
@@ -45,4 +47,16 @@ test("same-device caches are namespaced by the signed-in user", async () => {
 test("service worker never intercepts Supabase cross-origin requests", async () => {
   const serviceWorker = await readFile(serviceWorkerPath, "utf8");
   assert.match(serviceWorker, /origin !== self\.location\.origin/);
+});
+
+test("mobile magic links do not depend on the requesting browser PKCE verifier", async () => {
+  const client = await readFile(cloudClientPath, "utf8");
+  assert.match(client, /flowType: "implicit"/);
+  assert.doesNotMatch(client, /flowType: "pkce"/);
+});
+
+test("auth failures explain expired links and email cooldowns", async () => {
+  const authGate = await readFile(authGatePath, "utf8");
+  assert.match(authGate, /登录链接已失效或已被使用/);
+  assert.match(authGate, /发送太频繁，请等待 60 秒后再试/);
 });

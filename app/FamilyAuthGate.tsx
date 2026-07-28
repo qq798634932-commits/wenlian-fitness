@@ -143,7 +143,14 @@ function MagicLinkLogin({ client }: { client: NonNullable<ReturnType<typeof getS
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(readAuthCallbackError);
+
+  useEffect(() => {
+    if (!error || typeof window === "undefined") return;
+    const callbackParams = `${window.location.search}${window.location.hash}`;
+    if (!callbackParams.includes("error")) return;
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }, [error]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -156,7 +163,7 @@ function MagicLinkLogin({ client }: { client: NonNullable<ReturnType<typeof getS
     });
     setSending(false);
     if (authError) {
-      setError("这个邮箱还没有收到邀请，或登录邮件发送失败。");
+      setError(formatAuthSendError(authError));
       return;
     }
     setSent(true);
@@ -207,6 +214,35 @@ function MagicLinkLogin({ client }: { client: NonNullable<ReturnType<typeof getS
       </section>
     </main>
   );
+}
+
+function readAuthCallbackError() {
+  if (typeof window === "undefined") return "";
+  const query = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const code = hash.get("error_code") ?? query.get("error_code") ?? "";
+  const description = hash.get("error_description") ?? query.get("error_description") ?? "";
+  const detail = `${code} ${description}`.toLowerCase();
+
+  if (!detail.trim()) return "";
+  if (detail.includes("expired") || detail.includes("otp_expired")) {
+    return "登录链接已失效或已被使用，请重新发送一封新邮件。";
+  }
+  if (detail.includes("code verifier") || detail.includes("flow_state") || detail.includes("pkce")) {
+    return "这封登录邮件来自旧的浏览器验证流程，请重新发送一封新邮件。";
+  }
+  return "登录链接验证失败，请重新发送一封新邮件。";
+}
+
+function formatAuthSendError(authError: { code?: string; message?: string; status?: number }) {
+  const detail = `${authError.code ?? ""} ${authError.message ?? ""}`.toLowerCase();
+  if (authError.status === 429 || detail.includes("rate limit") || detail.includes("rate_limit")) {
+    return "发送太频繁，请等待 60 秒后再试。";
+  }
+  if (detail.includes("otp_disabled")) {
+    return "邮件登录暂未启用，请联系管理员。";
+  }
+  return "这个邮箱还没有收到邀请，或登录邮件暂时发送失败。";
 }
 
 function AccessBlocked({ email, onRetry, onSignOut }: { email: string; onRetry: () => void; onSignOut: () => void }) {
