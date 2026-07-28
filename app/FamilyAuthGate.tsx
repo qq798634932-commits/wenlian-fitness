@@ -236,6 +236,9 @@ function readAuthCallbackError() {
 
 function formatAuthSendError(authError: { code?: string; message?: string; status?: number }) {
   const detail = `${authError.code ?? ""} ${authError.message ?? ""}`.toLowerCase();
+  if (detail.includes("over_email_send_rate_limit")) {
+    return "邮件发送次数已达当前服务上限，请稍后再试。";
+  }
   if (authError.status === 429 || detail.includes("rate limit") || detail.includes("rate_limit")) {
     return "发送太频繁，请等待 60 秒后再试。";
   }

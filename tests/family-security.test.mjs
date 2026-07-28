@@ -58,5 +58,6 @@ test("mobile magic links do not depend on the requesting browser PKCE verifier",
 test("auth failures explain expired links and email cooldowns", async () => {
   const authGate = await readFile(authGatePath, "utf8");
   assert.match(authGate, /登录链接已失效或已被使用/);
+  assert.match(authGate, /邮件发送次数已达当前服务上限/);
   assert.match(authGate, /发送太频繁，请等待 60 秒后再试/);
 });
