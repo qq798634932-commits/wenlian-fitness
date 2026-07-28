@@ -3035,6 +3035,8 @@ label.file-button:active {
   background: var(--page);
   font-size: 12px;
   font-weight: 800;
+  color: var(--text);
+  text-decoration: none;
 }
 
 .account-action.is-danger {

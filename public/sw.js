@@ -1,7 +1,8 @@
-const CACHE_NAME = "wenlian-v8";
+const CACHE_NAME = "wenlian-v9";
 const BASE_URL = new URL("./", self.location.href);
 const APP_ASSETS = [
   "./",
+  "admin.html",
   "manifest.webmanifest",
   "app-config.js",
   "icon-512.png",

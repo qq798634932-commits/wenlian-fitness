@@ -10,5 +10,11 @@ export default defineConfig({
   build: {
     outDir: resolve(import.meta.dirname, "gh-pages"),
     emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        app: resolve(import.meta.dirname, "static-site/index.html"),
+        admin: resolve(import.meta.dirname, "static-site/admin.html"),
+      },
+    },
   },
 });

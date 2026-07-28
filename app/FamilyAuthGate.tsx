@@ -19,14 +19,14 @@ import { getSupabaseClient } from "./cloud/client";
 import type { CloudSession, Membership, MemberStatus } from "./cloud/client";
 
 type AuthState = "loading" | "signed-out" | "checking" | "active" | "blocked" | "error";
+type FamilyView = "fitness" | "admin";
 
-export default function FamilyAuthGate() {
+export default function FamilyAuthGate({ view = "fitness" }: { view?: FamilyView }) {
   const client = useMemo(() => getSupabaseClient(), []);
   const [session, setSession] = useState<Session | null>(null);
   const [membership, setMembership] = useState<Membership | null>(null);
   const [state, setState] = useState<AuthState>(client ? "loading" : "active");
   const [accountOpen, setAccountOpen] = useState(false);
-  const [adminOpen, setAdminOpen] = useState(false);
 
   const loadMembership = useCallback(async (nextSession: Session) => {
     if (!client) return;
@@ -61,7 +61,6 @@ export default function FamilyAuthGate() {
       setSession(nextSession);
       setMembership(null);
       setAccountOpen(false);
-      setAdminOpen(false);
       if (nextSession) void loadMembership(nextSession);
       else setState("signed-out");
     });
@@ -102,8 +101,17 @@ export default function FamilyAuthGate() {
     membership,
   };
 
-  if (adminOpen && membership.role === "admin") {
-    return <AdminPanel session={cloudSession} onClose={() => setAdminOpen(false)} />;
+  if (view === "admin") {
+    if (membership.role !== "admin") {
+      return (
+        <AccessBlocked
+          email={session.user.email ?? ""}
+          onRetry={() => void loadMembership(session)}
+          onSignOut={() => void client.auth.signOut()}
+        />
+      );
+    }
+    return <AdminPanel session={cloudSession} onClose={() => window.location.assign("./")} />;
   }
 
   return (
@@ -119,10 +127,7 @@ export default function FamilyAuthGate() {
         <AccountSheet
           session={cloudSession}
           onClose={() => setAccountOpen(false)}
-          onOpenAdmin={() => {
-            setAccountOpen(false);
-            setAdminOpen(true);
-          }}
+          onOpenAdmin={() => setAccountOpen(false)}
           onSignOut={() => void client.auth.signOut()}
         />
       )}
@@ -294,9 +299,15 @@ function AccountSheet({
         <p>{session.email}</p>
         <div className="account-sync-note"><CheckCircle size={18} weight="fill" />个人档案已启用云端隔离</div>
         {session.membership.role === "admin" && (
-          <button className="account-action" type="button" onClick={onOpenAdmin}>
+          <a
+            className="account-action"
+            href="./admin.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onOpenAdmin}
+          >
             <UsersThree size={19} />管理亲友账号
-          </button>
+          </a>
         )}
         <button className="account-action is-danger" type="button" onClick={onSignOut}>
           <SignOut size={19} />退出账号
