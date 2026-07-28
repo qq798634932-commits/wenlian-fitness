@@ -102,6 +102,10 @@ export default function FamilyAuthGate() {
     membership,
   };
 
+  if (adminOpen && membership.role === "admin") {
+    return <AdminPanel session={cloudSession} onClose={() => setAdminOpen(false)} />;
+  }
+
   return (
     <>
       <FitnessApp
@@ -121,9 +125,6 @@ export default function FamilyAuthGate() {
           }}
           onSignOut={() => void client.auth.signOut()}
         />
-      )}
-      {adminOpen && membership.role === "admin" && (
-        <AdminPanel session={cloudSession} onClose={() => setAdminOpen(false)} />
       )}
     </>
   );

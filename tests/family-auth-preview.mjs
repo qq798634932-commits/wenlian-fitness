@@ -149,6 +149,7 @@ await adminPage.getByRole("button", { name: "打开账号设置" }).click();
 await adminPage.getByRole("button", { name: "管理亲友账号" }).click();
 await adminPage.getByRole("heading", { name: "成员管理" }).waitFor();
 await adminPage.getByText("亲友成员").waitFor();
+assert.equal(await adminPage.getByRole("button", { name: "打开账号设置" }).count(), 0);
 assert.equal(await adminPage.getByText("这里仅显示账号状态，不提供身体档案或训练记录入口。").count(), 1);
 assert.equal(await adminPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
 await adminPage.screenshot({ path: "/private/tmp/wenlian-family-admin.png", fullPage: true });
