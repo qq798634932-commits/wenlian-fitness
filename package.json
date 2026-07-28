@@ -13,6 +13,7 @@
     "typecheck:app": "tsc --noEmit -p tsconfig.app.json",
     "test:family-security": "node --test tests/family-security.test.mjs",
     "test:family-preview": "node tests/family-auth-preview.mjs",
+    "test:invite-code-preview": "node tests/invite-code-profile-preview.mjs",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",

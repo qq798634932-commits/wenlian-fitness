@@ -94,7 +94,7 @@ function ProfileSheet({
         <div className="sheet-handle" />
         <button className="icon-button profile-close" type="button" aria-label="关闭个人档案" onClick={onClose}><X size={22} /></button>
         <h2 id="profile-title">个人训练档案</h2>
-        <p>这些数据只保存在当前设备，用于调整训练量，不会上传。</p>
+        <p>这些数据用于调整训练量；登录后只会同步到你自己的私人档案。</p>
         <form className="profile-form" onSubmit={submit}>
           <label className="profile-wide"><span>称呼</span><input value={name} onChange={(event) => setName(event.target.value)} placeholder="例如 小天" /></label>
           <label><span>年龄</span><input type="number" inputMode="numeric" value={age} onChange={(event) => setAge(event.target.value)} placeholder="30" required /></label>

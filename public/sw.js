@@ -1,4 +1,4 @@
-const CACHE_NAME = "wenlian-v9";
+const CACHE_NAME = "wenlian-v10";
 const BASE_URL = new URL("./", self.location.href);
 const APP_ASSETS = [
   "./",
@@ -56,9 +56,8 @@ self.addEventListener("fetch", (event) => {
   const requestUrl = new URL(event.request.url);
   if (requestUrl.origin !== self.location.origin) return;
 
-  // Authentication data lives in the navigation URL. Always ask the network
-  // for pages and runtime configuration first so an old cached app shell can
-  // never handle a new magic-link callback.
+  // Always ask the network for pages and runtime configuration first so an old
+  // cached login shell never handles a newly issued invitation flow.
   if (event.request.mode === "navigate" || requestUrl.pathname.endsWith("/app-config.js")) {
     event.respondWith(
       fetch(event.request, { cache: "no-store" })

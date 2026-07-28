@@ -3,10 +3,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type MemberRole = "admin" | "member";
 export type MemberStatus = "active" | "disabled";
+export type MemberAuthMethod = "email" | "invite_code";
 
 export type Membership = {
   user_id: string;
   email: string;
+  login_id: string | null;
+  auth_method: MemberAuthMethod;
   display_name: string;
   role: MemberRole;
   status: MemberStatus;
@@ -20,6 +23,24 @@ export type CloudSession = {
   email: string;
   membership: Membership;
 };
+
+export function normalizeMemberLoginId(value: string) {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+export function formatMemberLoginId(value: string) {
+  const normalized = normalizeMemberLoginId(value);
+  if (normalized.length !== 10) return value.trim().toUpperCase();
+  return `${normalized.slice(0, 2)}-${normalized.slice(2, 6)}-${normalized.slice(6)}`;
+}
+
+export function memberAuthEmail(loginId: string) {
+  return `${normalizeMemberLoginId(loginId).toLowerCase()}@members.wenlian-fitness.app`;
+}
+
+export function memberAuthPassword(loginId: string, pin: string) {
+  return `Wl!${pin}-${normalizeMemberLoginId(loginId)}-9x`;
+}
 
 declare global {
   interface Window {

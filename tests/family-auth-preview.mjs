@@ -12,6 +12,8 @@ const supabaseUrl = "https://family-test.supabase.co";
 const admin = {
   user_id: "user-admin",
   email: "admin@example.com",
+  login_id: null,
+  auth_method: "email",
   display_name: "小天",
   role: "admin",
   status: "active",
@@ -20,7 +22,9 @@ const admin = {
 };
 const member = {
   user_id: "user-member",
-  email: "family@example.com",
+  email: "wl7k9m2q4x@members.wenlian-fitness.app",
+  login_id: "WL-7K9M-2Q4X",
+  auth_method: "invite_code",
   display_name: "亲友成员",
   role: "member",
   status: "active",
@@ -50,6 +54,19 @@ async function mockSupabase(page) {
       await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
       return;
     }
+    if (url.pathname === "/functions/v1/redeem-invite-code") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          loginId: member.login_id,
+          displayName: member.display_name,
+          accessToken: jwt(),
+          refreshToken: "test-refresh-token",
+        }),
+      });
+      return;
+    }
     if (url.pathname === "/auth/v1/user") {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(sessionUser()) });
       return;
@@ -65,6 +82,19 @@ async function mockSupabase(page) {
           "Content-Range": ownQuery ? "0-0/1" : "0-1/2",
         },
         body: JSON.stringify(ownQuery ? admin : [admin, member]),
+      });
+      return;
+    }
+    if (url.pathname.endsWith("/invite_codes")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Expose-Headers": "Content-Range",
+          "Content-Range": "*/0",
+        },
+        body: "[]",
       });
       return;
     }
@@ -115,7 +145,7 @@ function sessionUser() {
 
 function jwt() {
   const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
-  return `${encode({ alg: "HS256", typ: "JWT" })}.${encode({ sub: admin.user_id, exp: Math.floor(Date.now() / 1000) + 3600 })}.signature`;
+  return `${encode({ alg: "HS256", typ: "JWT" })}.${encode({ sub: admin.user_id, exp: Math.floor(Date.now() / 1000) + 3600 })}.${Buffer.from("test-signature").toString("base64url")}`;
 }
 
 const signedOutContext = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
@@ -123,10 +153,12 @@ const signedOutPage = await signedOutContext.newPage();
 await configRoute(signedOutPage);
 await mockSupabase(signedOutPage);
 await signedOutPage.goto(baseUrl, { waitUntil: "networkidle" });
-await signedOutPage.getByRole("heading", { name: "登录稳练" }).waitFor();
-await signedOutPage.getByLabel("邮箱").fill("family@example.com");
-await signedOutPage.getByRole("button", { name: "发送登录链接" }).click();
-await signedOutPage.getByText("登录邮件已发送").waitFor();
+await signedOutPage.getByRole("heading", { name: "激活你的档案" }).waitFor();
+await signedOutPage.getByLabel("一次性邀请码").fill(member.login_id);
+await signedOutPage.getByLabel("6位数字密码").fill("275804");
+await signedOutPage.getByLabel("再次输入密码").fill("275804");
+await signedOutPage.getByRole("button", { name: "激活并进入" }).click();
+await signedOutPage.getByText("私人档案已同步").waitFor();
 await signedOutContext.close();
 
 const adminContext = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });

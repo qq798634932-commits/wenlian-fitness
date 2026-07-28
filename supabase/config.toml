@@ -1,0 +1,8 @@
+[functions.create-invite-code]
+verify_jwt = true
+
+[functions.redeem-invite-code]
+verify_jwt = false
+
+[functions.update-member-status]
+verify_jwt = true

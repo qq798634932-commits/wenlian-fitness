@@ -699,7 +699,7 @@ function RecordsView({
       <header className="page-heading record-heading">
         <span>训练记录</span>
         <h1>看见稳定积累</h1>
-        <p>数据保存在这台设备。定期导出到 Obsidian 或下载备份。</p>
+        <p>训练记录保存在当前私人档案。也可定期导出到 Obsidian 或下载备份。</p>
       </header>
 
       <section className="stat-grid" aria-label="训练统计">

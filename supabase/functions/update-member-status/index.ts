@@ -1,7 +1,13 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 function corsHeaders(request: Request) {
-  const configuredOrigin = Deno.env.get("PUBLIC_SITE_URL") ?? "";
+  const configuredSiteUrl = Deno.env.get("PUBLIC_SITE_URL") ?? "";
+  let configuredOrigin = configuredSiteUrl.replace(/\/+$/, "");
+  try {
+    configuredOrigin = new URL(configuredSiteUrl).origin;
+  } catch {
+    // Keep the trimmed value so a malformed secret fails closed.
+  }
   const requestOrigin = request.headers.get("origin") ?? "";
   const allowedOrigin = requestOrigin && requestOrigin === configuredOrigin
     ? requestOrigin

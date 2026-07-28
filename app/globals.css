@@ -2833,6 +2833,33 @@ label.file-button:active {
   line-height: 1.6;
 }
 
+.family-auth-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 18px;
+  border-radius: 16px;
+  background: var(--surface-strong);
+  padding: 4px;
+}
+
+.family-auth-switch button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  transition: background-color 180ms ease, color 180ms ease, transform 140ms ease;
+}
+
+.family-auth-switch button.active {
+  background: var(--surface);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--text) 9%, transparent);
+  color: var(--text);
+}
+
 .family-auth-form {
   display: grid;
   gap: 10px;
@@ -2887,6 +2914,49 @@ label.file-button:active {
 
 .family-auth-primary:disabled {
   opacity: 0.55;
+}
+
+.family-auth-device-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 16px;
+  color: var(--muted);
+}
+
+.family-auth-device-note svg {
+  flex: 0 0 auto;
+  color: var(--accent-strong);
+}
+
+.family-auth-device-note p {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.family-auth-admin-link,
+.family-auth-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.family-auth-admin-link {
+  width: 100%;
+  justify-content: center;
+  margin-top: 16px;
+  padding: 8px;
+}
+
+.family-auth-back {
+  margin: -8px 0 20px;
+  padding: 6px 0;
 }
 
 .family-auth-ghost {
@@ -3076,6 +3146,7 @@ label.file-button:active {
 }
 
 .admin-invite-card,
+.admin-pending-codes,
 .admin-members {
   margin-bottom: 14px;
   border: 1px solid var(--line);
@@ -3085,10 +3156,29 @@ label.file-button:active {
 }
 
 .admin-invite-card h2,
+.admin-pending-codes h2,
 .admin-members h2 {
   margin: 0;
   font-size: 18px;
   letter-spacing: -0.03em;
+}
+
+.admin-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.admin-section-heading > div > span {
+  color: var(--accent-strong);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.admin-section-heading svg {
+  color: var(--accent-strong);
 }
 
 .admin-invite-card form {
@@ -3115,6 +3205,52 @@ label.file-button:active {
   margin-top: 12px;
 }
 
+.generated-invite {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  border-radius: 18px;
+  background: #1d2318;
+  padding: 17px;
+  color: #f2f6eb;
+}
+
+.generated-invite > span {
+  color: #b9c1b0;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.generated-invite > strong {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: clamp(23px, 7vw, 31px);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.generated-invite > p {
+  margin: 0;
+  color: #b9c1b0;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.generated-invite > button {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 3px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.admin-pending-codes > div:first-child,
 .admin-members > div:first-child {
   display: flex;
   align-items: center;
@@ -3122,9 +3258,35 @@ label.file-button:active {
   margin-bottom: 12px;
 }
 
+.admin-pending-codes > div:first-child span,
 .admin-members > div:first-child span {
   color: var(--muted);
   font-size: 11px;
+}
+
+.admin-pending-codes article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding: 13px 0;
+}
+
+.admin-pending-codes article strong,
+.admin-pending-codes article small {
+  display: block;
+}
+
+.admin-pending-codes article strong {
+  font-size: 13px;
+}
+
+.admin-pending-codes article small,
+.admin-pending-codes article > span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
 }
 
 .admin-members article {

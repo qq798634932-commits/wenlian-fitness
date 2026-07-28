@@ -1,5 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
 function corsHeaders(request: Request) {
   const configuredSiteUrl = Deno.env.get("PUBLIC_SITE_URL") ?? "";
   let configuredOrigin = configuredSiteUrl.replace(/\/+$/, "");
@@ -21,6 +23,13 @@ function corsHeaders(request: Request) {
   };
 }
 
+function json(request: Request, body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders(request), "Content-Type": "application/json" },
+  });
+}
+
 function serviceClient() {
   const url = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -30,11 +39,9 @@ function serviceClient() {
 
 async function requireAdmin(request: Request) {
   const authorization = request.headers.get("Authorization");
-  if (!authorization) return null;
-
   const url = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!url || !anonKey) throw new Error("Supabase public configuration is missing");
+  if (!authorization || !url || !anonKey) return null;
 
   const caller = createClient(url, anonKey, {
     global: { headers: { Authorization: authorization } },
@@ -54,11 +61,21 @@ async function requireAdmin(request: Request) {
   return { user, admin };
 }
 
-function json(request: Request, body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders(request), "Content-Type": "application/json" },
-  });
+function generateCode() {
+  const bytes = new Uint8Array(8);
+  crypto.getRandomValues(bytes);
+  const value = Array.from(bytes, (byte) => CODE_ALPHABET[byte % CODE_ALPHABET.length]).join("");
+  return `WL-${value.slice(0, 4)}-${value.slice(4)}`;
+}
+
+function normalizeCode(code: string) {
+  return code.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+async function hashCode(code: string) {
+  const bytes = new TextEncoder().encode(normalizeCode(code));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 Deno.serve(async (request) => {
@@ -67,41 +84,42 @@ Deno.serve(async (request) => {
 
   try {
     const session = await requireAdmin(request);
-    if (!session) return json(request, { error: "只有管理员可以邀请成员" }, 403);
+    if (!session) return json(request, { error: "只有管理员可以生成邀请码" }, 403);
 
     const body = await request.json();
-    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     const displayName = typeof body.displayName === "string" ? body.displayName.trim() : "";
-    if (!/^\S+@\S+\.\S+$/.test(email)) return json(request, { error: "请输入有效邮箱" }, 400);
-    if (!displayName || displayName.length > 40) return json(request, { error: "称呼需要为 1-40 个字符" }, 400);
-
-    const { data: existing } = await session.admin
-      .from("memberships")
-      .select("user_id, status")
-      .eq("email", email)
-      .maybeSingle();
-    if (existing) return json(request, { error: "该邮箱已经是成员" }, 409);
-
-    const { data: invitation, error: invitationError } = await session.admin
-      .from("invitations")
-      .insert({ email, display_name: displayName, invited_by: session.user.id })
-      .select("id")
-      .single();
-    if (invitationError) return json(request, { error: "该邮箱已有待处理邀请" }, 409);
-
-    const redirectTo = Deno.env.get("PUBLIC_SITE_URL") ?? undefined;
-    const { error: inviteError } = await session.admin.auth.admin.inviteUserByEmail(email, {
-      redirectTo,
-      data: { display_name: displayName, invited_by: session.user.id },
-    });
-
-    if (inviteError) {
-      await session.admin.from("invitations").delete().eq("id", invitation.id);
-      return json(request, { error: inviteError.message }, 400);
+    if (!displayName || displayName.length > 40) {
+      return json(request, { error: "称呼需要为 1-40 个字符" }, 400);
     }
 
-    return json(request, { invitationId: invitation.id, email });
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const code = generateCode();
+      const codeHash = await hashCode(code);
+      const { data, error } = await session.admin
+        .from("invite_codes")
+        .insert({
+          code_hash: codeHash,
+          code_hint: code.slice(-4),
+          display_name: displayName,
+          created_by: session.user.id,
+          expires_at: expiresAt,
+        })
+        .select("id, expires_at")
+        .single();
+
+      if (!error && data) {
+        return json(request, {
+          invitationId: data.id,
+          code,
+          displayName,
+          expiresAt: data.expires_at,
+        });
+      }
+    }
+
+    return json(request, { error: "邀请码生成失败，请重试" }, 500);
   } catch (error) {
-    return json(request, { error: error instanceof Error ? error.message : "邀请失败" }, 500);
+    return json(request, { error: error instanceof Error ? error.message : "邀请码生成失败" }, 500);
   }
 });

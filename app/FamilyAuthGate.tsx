@@ -4,9 +4,13 @@ import {
   ArrowLeft,
   Barbell,
   CheckCircle,
+  Copy,
+  DeviceMobile,
   EnvelopeSimple,
+  Key,
   LockKey,
   SignOut,
+  Ticket,
   UserCircle,
   UsersThree,
   Warning,
@@ -15,11 +19,33 @@ import {
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import FitnessApp from "./FitnessApp";
-import { getSupabaseClient } from "./cloud/client";
+import {
+  formatMemberLoginId,
+  getSupabaseClient,
+  memberAuthEmail,
+  memberAuthPassword,
+  normalizeMemberLoginId,
+} from "./cloud/client";
 import type { CloudSession, Membership, MemberStatus } from "./cloud/client";
 
 type AuthState = "loading" | "signed-out" | "checking" | "active" | "blocked" | "error";
 type FamilyView = "fitness" | "admin";
+type LoginMode = "redeem" | "login" | "admin";
+
+type InviteCodeSummary = {
+  id: string;
+  display_name: string;
+  code_hint: string;
+  status: "pending" | "claiming" | "redeemed" | "cancelled" | "expired";
+  expires_at: string;
+  created_at: string;
+};
+
+type GeneratedInvite = {
+  code: string;
+  displayName: string;
+  expiresAt: string;
+};
 
 export default function FamilyAuthGate({ view = "fitness" }: { view?: FamilyView }) {
   const client = useMemo(() => getSupabaseClient(), []);
@@ -33,7 +59,7 @@ export default function FamilyAuthGate({ view = "fitness" }: { view?: FamilyView
     setState("checking");
     const { data, error } = await client
       .from("memberships")
-      .select("user_id,email,display_name,role,status,created_at,updated_at")
+      .select("user_id,email,login_id,auth_method,display_name,role,status,created_at,updated_at")
       .eq("user_id", nextSession.user.id)
       .maybeSingle();
 
@@ -73,7 +99,7 @@ export default function FamilyAuthGate({ view = "fitness" }: { view?: FamilyView
 
   if (!client) return <FitnessApp />;
   if (state === "loading" || state === "checking") return <CloudLoading />;
-  if (state === "signed-out") return <MagicLinkLogin client={client} />;
+  if (state === "signed-out") return <MemberAccess client={client} />;
 
   if (state === "error" && session) {
     return (
@@ -145,7 +171,181 @@ function CloudLoading() {
   );
 }
 
-function MagicLinkLogin({ client }: { client: NonNullable<ReturnType<typeof getSupabaseClient>> }) {
+function MemberAccess({ client }: { client: NonNullable<ReturnType<typeof getSupabaseClient>> }) {
+  const [mode, setMode] = useState<LoginMode>("redeem");
+  const [loginId, setLoginId] = useState("");
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  function changeMode(nextMode: LoginMode) {
+    setMode(nextMode);
+    setPin("");
+    setConfirmPin("");
+    setError("");
+  }
+
+  function validateCredentials(requireConfirmation: boolean) {
+    const normalized = normalizeMemberLoginId(loginId);
+    if (!/^WL[A-HJ-NP-Z2-9]{8}$/.test(normalized)) {
+      return "请输入管理员提供的完整邀请码。";
+    }
+    if (!/^\d{6}$/.test(pin)) return "密码需要是6位数字。";
+    if (/^([0-9])\1{5}$/.test(pin) || pin === "123456" || pin === "654321") {
+      return "请不要使用连续数字或6位相同数字。";
+    }
+    if (requireConfirmation && pin !== confirmPin) return "两次输入的密码不一致。";
+    return "";
+  }
+
+  async function redeem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationError = validateCredentials(true);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    const { data, error: functionError } = await client.functions.invoke("redeem-invite-code", {
+      body: { code: formatMemberLoginId(loginId), pin },
+    });
+    if (functionError) {
+      setBusy(false);
+      setError(await functionErrorMessage(functionError, "邀请码激活失败，请稍后重试。"));
+      return;
+    }
+
+    const payload = data as { accessToken?: string; refreshToken?: string } | null;
+    if (!payload?.accessToken || !payload.refreshToken) {
+      setBusy(false);
+      setError("账号已经创建，但自动登录失败。请切换到“已有账号”重新登录。");
+      return;
+    }
+
+    const { error: sessionError } = await client.auth.setSession({
+      access_token: payload.accessToken,
+      refresh_token: payload.refreshToken,
+    });
+    setBusy(false);
+    if (sessionError) setError("账号已经创建，请切换到“已有账号”重新登录。");
+  }
+
+  async function login(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationError = validateCredentials(false);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    const { error: authError } = await client.auth.signInWithPassword({
+      email: memberAuthEmail(loginId),
+      password: memberAuthPassword(loginId, pin),
+    });
+    setBusy(false);
+    if (authError) setError("登录号或6位密码不正确，请重新检查。");
+  }
+
+  if (mode === "admin") return <AdminMagicLinkLogin client={client} onBack={() => changeMode("redeem")} />;
+
+  const redeeming = mode === "redeem";
+  return (
+    <main className="family-auth-shell">
+      <section className="family-auth-card" aria-labelledby="family-login-title">
+        <div className="family-auth-mark"><Barbell size={27} weight="duotone" /></div>
+        <span>亲友私人档案</span>
+        <h1 id="family-login-title">{redeeming ? "激活你的档案" : "回到稳练"}</h1>
+        <p>{redeeming ? "输入管理员发给你的专属邀请码，并设置自己的6位密码。" : "使用首次激活时的邀请码和6位密码登录。"}</p>
+
+        <div className="family-auth-switch" aria-label="亲友登录方式">
+          <button type="button" className={redeeming ? "active" : ""} onClick={() => changeMode("redeem")}>首次激活</button>
+          <button type="button" className={!redeeming ? "active" : ""} onClick={() => changeMode("login")}>已有账号</button>
+        </div>
+
+        <form className="family-auth-form" onSubmit={redeeming ? redeem : login}>
+          <label htmlFor="family-login-id">{redeeming ? "一次性邀请码" : "登录号"}</label>
+          <div className="family-auth-input">
+            <Ticket size={19} />
+            <input
+              id="family-login-id"
+              value={loginId}
+              onChange={(event) => setLoginId(event.target.value.toUpperCase())}
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder="WL-XXXX-XXXX"
+              maxLength={12}
+              required
+            />
+          </div>
+          <label htmlFor="family-pin">6位数字密码</label>
+          <div className="family-auth-input">
+            <Key size={19} />
+            <input
+              id="family-pin"
+              type="password"
+              inputMode="numeric"
+              autoComplete={redeeming ? "new-password" : "current-password"}
+              value={pin}
+              onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder="输入6位数字"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              required
+            />
+          </div>
+          {redeeming && (
+            <>
+              <label htmlFor="family-pin-confirm">再次输入密码</label>
+              <div className="family-auth-input">
+                <LockKey size={19} />
+                <input
+                  id="family-pin-confirm"
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="new-password"
+                  value={confirmPin}
+                  onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="再次输入6位数字"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  required
+                />
+              </div>
+            </>
+          )}
+          {error && <p className="family-auth-error" role="alert"><Warning size={17} />{error}</p>}
+          <button className="family-auth-primary" type="submit" disabled={busy}>
+            {busy ? (redeeming ? "正在建立档案" : "正在登录") : (redeeming ? "激活并进入" : "进入我的档案")}
+          </button>
+        </form>
+
+        <div className="family-auth-device-note">
+          <DeviceMobile size={19} weight="duotone" />
+          <p>登录状态会保存在这部手机。邀请码首次激活后，继续作为你的登录号使用。</p>
+        </div>
+        <button className="family-auth-admin-link" type="button" onClick={() => changeMode("admin")}>管理员邮箱登录</button>
+        <div className="family-auth-privacy">
+          <LockKey size={18} weight="duotone" />
+          <p>每位成员只能查看自己的身体档案和训练记录，管理员也不能读取。</p>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function AdminMagicLinkLogin({
+  client,
+  onBack,
+}: {
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>;
+  onBack: () => void;
+}) {
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -178,10 +378,11 @@ function MagicLinkLogin({ client }: { client: NonNullable<ReturnType<typeof getS
   return (
     <main className="family-auth-shell">
       <section className="family-auth-card" aria-labelledby="family-login-title">
+        <button className="family-auth-back" type="button" onClick={onBack}><ArrowLeft size={18} />亲友登录</button>
         <div className="family-auth-mark"><Barbell size={27} weight="duotone" /></div>
-        <span>亲友私人档案</span>
-        <h1 id="family-login-title">登录稳练</h1>
-        <p>仅限收到邀请的亲友。登录链接会发送到你的邮箱，不需要记密码。</p>
+        <span>管理员入口</span>
+        <h1 id="family-login-title">邮箱验证登录</h1>
+        <p>管理员账号继续使用邮箱链接，亲友不需要进入这里。</p>
 
         {sent ? (
           <div className="family-auth-success" role="status">
@@ -215,11 +416,27 @@ function MagicLinkLogin({ client }: { client: NonNullable<ReturnType<typeof getS
 
         <div className="family-auth-privacy">
           <LockKey size={18} weight="duotone" />
-          <p>每位成员只能查看自己的身体档案和训练记录，管理员也不能读取。</p>
+          <p>邮箱入口仅用于管理员账号和历史账号维护。</p>
         </div>
       </section>
     </main>
   );
+}
+
+async function functionErrorMessage(error: unknown, fallback: string) {
+  if (error && typeof error === "object" && "context" in error) {
+    const context = (error as { context?: unknown }).context;
+    if (context instanceof Response) {
+      try {
+        const payload = await context.clone().json() as { error?: string };
+        if (payload.error) return payload.error;
+      } catch {
+        // Fall through to the public error message.
+      }
+    }
+  }
+  if (error instanceof Error && error.message && !error.message.includes("non-2xx")) return error.message;
+  return fallback;
 }
 
 function readAuthCallbackError() {
@@ -296,7 +513,7 @@ function AccountSheet({
         <UserCircle size={36} weight="duotone" />
         <span>当前账号</span>
         <h2 id="account-title">{session.membership.display_name}</h2>
-        <p>{session.email}</p>
+        <p>{session.membership.login_id ? `登录号 ${session.membership.login_id}` : session.email}</p>
         <div className="account-sync-note"><CheckCircle size={18} weight="fill" />个人档案已启用云端隔离</div>
         {session.membership.role === "admin" && (
           <a
@@ -319,43 +536,67 @@ function AccountSheet({
 
 function AdminPanel({ session, onClose }: { session: CloudSession; onClose: () => void }) {
   const [members, setMembers] = useState<Membership[]>([]);
-  const [email, setEmail] = useState("");
+  const [inviteCodes, setInviteCodes] = useState<InviteCodeSummary[]>([]);
   const [displayName, setDisplayName] = useState("");
+  const [generatedInvite, setGeneratedInvite] = useState<GeneratedInvite | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const loadMembers = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await session.client
-      .from("memberships")
-      .select("user_id,email,display_name,role,status,created_at,updated_at")
-      .order("created_at", { ascending: true });
+    const [memberResult, inviteResult] = await Promise.all([
+      session.client
+        .from("memberships")
+        .select("user_id,email,login_id,auth_method,display_name,role,status,created_at,updated_at")
+        .order("created_at", { ascending: true }),
+      session.client
+        .from("invite_codes")
+        .select("id,display_name,code_hint,status,expires_at,created_at")
+        .in("status", ["pending", "claiming"])
+        .order("created_at", { ascending: false }),
+    ]);
     setLoading(false);
+    const error = memberResult.error ?? inviteResult.error;
     if (error) setMessage("成员列表读取失败");
-    else setMembers((data ?? []) as Membership[]);
+    else {
+      setMembers((memberResult.data ?? []) as Membership[]);
+      setInviteCodes((inviteResult.data ?? []) as InviteCodeSummary[]);
+    }
   }, [session.client]);
 
   useEffect(() => {
     void loadMembers();
   }, [loadMembers]);
 
-  async function invite(event: FormEvent<HTMLFormElement>) {
+  async function createInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
     setMessage("");
-    const { error } = await session.client.functions.invoke("invite-member", {
-      body: { email: email.trim(), displayName: displayName.trim() },
+    setGeneratedInvite(null);
+    const { data, error } = await session.client.functions.invoke("create-invite-code", {
+      body: { displayName: displayName.trim() },
     });
     setSaving(false);
     if (error) {
-      setMessage(error.message || "邀请发送失败");
+      setMessage(await functionErrorMessage(error, "邀请码生成失败"));
       return;
     }
-    setEmail("");
+    const payload = data as GeneratedInvite | null;
+    if (!payload?.code) {
+      setMessage("邀请码生成失败");
+      return;
+    }
     setDisplayName("");
-    setMessage("邀请邮件已发送");
+    setGeneratedInvite(payload);
+    setMessage("邀请码已生成，请立即复制给本人");
     void loadMembers();
+  }
+
+  async function copyInviteCode() {
+    if (!generatedInvite) return;
+    await navigator.clipboard.writeText(generatedInvite.code);
+    setMessage("邀请码已复制");
   }
 
   async function updateStatus(member: Membership, status: MemberStatus) {
@@ -380,14 +621,33 @@ function AdminPanel({ session, onClose }: { session: CloudSession; onClose: () =
       </section>
 
       <section className="admin-invite-card">
-        <h2>邀请亲友</h2>
-        <form onSubmit={invite}>
+        <div className="admin-section-heading"><div><span>一次性激活</span><h2>生成亲友邀请码</h2></div><Ticket size={25} weight="duotone" /></div>
+        <form onSubmit={createInvite}>
           <label>称呼<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} maxLength={40} required /></label>
-          <label>邮箱<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
-          <button className="family-auth-primary" type="submit" disabled={saving}>{saving ? "正在发送" : "发送邀请"}</button>
+          <button className="family-auth-primary" type="submit" disabled={saving}>{saving ? "正在生成" : "生成邀请码"}</button>
         </form>
+        {generatedInvite && (
+          <div className="generated-invite" role="status">
+            <span>{generatedInvite.displayName}的专属邀请码</span>
+            <strong>{generatedInvite.code}</strong>
+            <p>7天内首次激活有效。激活后，它会继续作为该成员的登录号。</p>
+            <button type="button" onClick={() => void copyInviteCode()}><Copy size={18} />复制邀请码</button>
+          </div>
+        )}
         {message && <p className="admin-message" role="status">{message}</p>}
       </section>
+
+      {inviteCodes.length > 0 && (
+        <section className="admin-pending-codes" aria-labelledby="pending-codes-title">
+          <div><h2 id="pending-codes-title">等待激活</h2><span>{inviteCodes.length} 个</span></div>
+          {inviteCodes.map((invite) => (
+            <article key={invite.id}>
+              <div><strong>{invite.display_name}</strong><small>邀请码尾号 · {invite.code_hint}</small></div>
+              <span>{new Date(invite.expires_at).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })} 到期</span>
+            </article>
+          ))}
+        </section>
+      )}
 
       <section className="admin-members" aria-labelledby="members-title">
         <div><h2 id="members-title">已加入成员</h2><span>{members.length} 人</span></div>
@@ -400,7 +660,7 @@ function AdminPanel({ session, onClose }: { session: CloudSession; onClose: () =
             <article key={member.user_id}>
               <div>
                 <strong>{member.display_name}</strong>
-                <small>{member.email}</small>
+                <small>{member.login_id ? `登录号 · ${member.login_id}` : member.email}</small>
               </div>
               {member.role === "admin" ? (
                 <span className="member-role">管理员</span>
