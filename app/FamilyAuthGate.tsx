@@ -20,6 +20,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import FitnessApp from "./FitnessApp";
 import {
+  adminAuthPassword,
   formatMemberLoginId,
   getSupabaseClient,
   memberAuthEmail,
@@ -31,6 +32,22 @@ import type { CloudSession, Membership, MemberStatus } from "./cloud/client";
 type AuthState = "loading" | "signed-out" | "checking" | "active" | "blocked" | "error";
 type FamilyView = "fitness" | "admin";
 type LoginMode = "redeem" | "login" | "admin";
+
+const ADMIN_EMAIL_STORAGE_KEY = "wenlian-admin-email-v1";
+
+function pinValidationMessage(pin: string, confirmation?: string) {
+  if (!/^\d{6}$/.test(pin)) return "密码需要是6位数字。";
+  if (/^([0-9])\1{5}$/.test(pin) || pin === "123456" || pin === "654321") {
+    return "请不要使用连续数字或6位相同数字。";
+  }
+  if (confirmation !== undefined && pin !== confirmation) return "两次输入的密码不一致。";
+  return "";
+}
+
+function rememberedAdminEmail() {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(ADMIN_EMAIL_STORAGE_KEY) ?? "";
+}
 
 type InviteCodeSummary = {
   id: string;
@@ -82,20 +99,47 @@ export default function FamilyAuthGate({ view = "fitness" }: { view?: FamilyView
       else setState("signed-out");
     });
 
-    const { data: listener } = client.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: listener } = client.auth.onAuthStateChange((event, nextSession) => {
       if (!active) return;
       setSession(nextSession);
+
+      // Token rotation and account updates are expected during long-lived
+      // mobile sessions. Keep the current screen mounted so an iPhone wake-up
+      // or admin PIN change never interrupts the active view.
+      if ((event === "TOKEN_REFRESHED" || event === "USER_UPDATED") && nextSession) return;
+
       setMembership(null);
       setAccountOpen(false);
       if (nextSession) void loadMembership(nextSession);
       else setState("signed-out");
     });
 
+    const refreshOnResume = () => {
+      if (document.visibilityState === "hidden") return;
+      void client.auth.getSession().then(({ data, error }) => {
+        if (!active || error || !data.session?.expires_at) return;
+        const secondsRemaining = data.session.expires_at - Math.floor(Date.now() / 1000);
+        if (secondsRemaining <= 5 * 60) void client.auth.refreshSession();
+      });
+    };
+
+    window.addEventListener("pageshow", refreshOnResume);
+    window.addEventListener("online", refreshOnResume);
+    document.addEventListener("visibilitychange", refreshOnResume);
+
     return () => {
       active = false;
       listener.subscription.unsubscribe();
+      window.removeEventListener("pageshow", refreshOnResume);
+      window.removeEventListener("online", refreshOnResume);
+      document.removeEventListener("visibilitychange", refreshOnResume);
     };
   }, [client, loadMembership]);
+
+  useEffect(() => {
+    if (membership?.role !== "admin" || !session?.user.email) return;
+    window.localStorage.setItem(ADMIN_EMAIL_STORAGE_KEY, session.user.email);
+  }, [membership?.role, session?.user.email]);
 
   if (!client) return <FitnessApp />;
   if (state === "loading" || state === "checking") return <CloudLoading />;
@@ -191,12 +235,7 @@ function MemberAccess({ client }: { client: NonNullable<ReturnType<typeof getSup
     if (!/^WL[A-HJ-NP-Z2-9]{8}$/.test(normalized)) {
       return "请输入管理员提供的完整邀请码。";
     }
-    if (!/^\d{6}$/.test(pin)) return "密码需要是6位数字。";
-    if (/^([0-9])\1{5}$/.test(pin) || pin === "123456" || pin === "654321") {
-      return "请不要使用连续数字或6位相同数字。";
-    }
-    if (requireConfirmation && pin !== confirmPin) return "两次输入的密码不一致。";
-    return "";
+    return pinValidationMessage(pin, requireConfirmation ? confirmPin : undefined);
   }
 
   async function redeem(event: FormEvent<HTMLFormElement>) {
@@ -251,7 +290,7 @@ function MemberAccess({ client }: { client: NonNullable<ReturnType<typeof getSup
     if (authError) setError("登录号或6位密码不正确，请重新检查。");
   }
 
-  if (mode === "admin") return <AdminMagicLinkLogin client={client} onBack={() => changeMode("redeem")} />;
+  if (mode === "admin") return <AdminLogin client={client} onBack={() => changeMode("redeem")} />;
 
   const redeeming = mode === "redeem";
   return (
@@ -329,11 +368,106 @@ function MemberAccess({ client }: { client: NonNullable<ReturnType<typeof getSup
           <DeviceMobile size={19} weight="duotone" />
           <p>登录状态会保存在这部手机。邀请码首次激活后，继续作为你的登录号使用。</p>
         </div>
-        <button className="family-auth-admin-link" type="button" onClick={() => changeMode("admin")}>管理员邮箱登录</button>
+        <button className="family-auth-admin-link" type="button" onClick={() => changeMode("admin")}>管理员登录</button>
         <div className="family-auth-privacy">
           <LockKey size={18} weight="duotone" />
           <p>每位成员只能查看自己的身体档案和训练记录，管理员也不能读取。</p>
         </div>
+      </section>
+    </main>
+  );
+}
+
+function AdminLogin({
+  client,
+  onBack,
+}: {
+  client: NonNullable<ReturnType<typeof getSupabaseClient>>;
+  onBack: () => void;
+}) {
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [email, setEmail] = useState(rememberedAdminEmail);
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  if (recoveryOpen) {
+    return <AdminMagicLinkLogin client={client} onBack={() => setRecoveryOpen(false)} />;
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+    const validationError = pinValidationMessage(pin);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    const { error: authError } = await client.auth.signInWithPassword({
+      email: normalizedEmail,
+      password: adminAuthPassword(normalizedEmail, pin),
+    });
+    setBusy(false);
+    if (authError) {
+      setError("邮箱或6位管理员密码不正确。首次使用请通过邮件验证后设置密码。");
+      return;
+    }
+    window.localStorage.setItem(ADMIN_EMAIL_STORAGE_KEY, normalizedEmail);
+  }
+
+  return (
+    <main className="family-auth-shell">
+      <section className="family-auth-card" aria-labelledby="admin-login-title">
+        <button className="family-auth-back" type="button" onClick={onBack}><ArrowLeft size={18} />亲友登录</button>
+        <div className="family-auth-mark"><Barbell size={27} weight="duotone" /></div>
+        <span>管理员入口</span>
+        <h1 id="admin-login-title">管理员登录</h1>
+        <p>使用管理员邮箱和6位数字密码。成功一次后，这部手机会自动保持登录。</p>
+
+        <form className="family-auth-form" onSubmit={submit}>
+          <label htmlFor="admin-email">管理员邮箱</label>
+          <div className="family-auth-input">
+            <EnvelopeSimple size={19} />
+            <input
+              id="admin-email"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="username"
+              placeholder="管理员邮箱"
+              required
+            />
+          </div>
+          <label htmlFor="admin-pin">6位数字密码</label>
+          <div className="family-auth-input">
+            <Key size={19} />
+            <input
+              id="admin-pin"
+              type="password"
+              inputMode="numeric"
+              autoComplete="current-password"
+              value={pin}
+              onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder="输入6位数字"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              required
+            />
+          </div>
+          {error && <p className="family-auth-error" role="alert"><Warning size={17} />{error}</p>}
+          <button className="family-auth-primary" type="submit" disabled={busy}>
+            {busy ? "正在登录" : "进入管理员账号"}
+          </button>
+        </form>
+
+        <div className="family-auth-device-note">
+          <DeviceMobile size={19} weight="duotone" />
+          <p>请固定从iPhone主屏幕的“稳练”图标进入，不要在微信、Gmail和Safari之间切换入口。</p>
+        </div>
+        <button className="family-auth-admin-link" type="button" onClick={() => setRecoveryOpen(true)}>首次设置或忘记密码？使用邮件验证</button>
       </section>
     </main>
   );
@@ -378,11 +512,11 @@ function AdminMagicLinkLogin({
   return (
     <main className="family-auth-shell">
       <section className="family-auth-card" aria-labelledby="family-login-title">
-        <button className="family-auth-back" type="button" onClick={onBack}><ArrowLeft size={18} />亲友登录</button>
+        <button className="family-auth-back" type="button" onClick={onBack}><ArrowLeft size={18} />密码登录</button>
         <div className="family-auth-mark"><Barbell size={27} weight="duotone" /></div>
         <span>管理员入口</span>
-        <h1 id="family-login-title">邮箱验证登录</h1>
-        <p>管理员账号继续使用邮箱链接，亲友不需要进入这里。</p>
+        <h1 id="family-login-title">邮件恢复</h1>
+        <p>首次设置6位密码或忘记密码时使用。日常登录不需要发送邮件。</p>
 
         {sent ? (
           <div className="family-auth-success" role="status">
@@ -506,6 +640,35 @@ function AccountSheet({
   onOpenAdmin: () => void;
   onSignOut: () => void;
 }) {
+  const [pinOpen, setPinOpen] = useState(false);
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [pinBusy, setPinBusy] = useState(false);
+  const [pinMessage, setPinMessage] = useState("");
+
+  async function saveAdminPin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const validationError = pinValidationMessage(pin, confirmPin);
+    if (validationError) {
+      setPinMessage(validationError);
+      return;
+    }
+
+    setPinBusy(true);
+    setPinMessage("");
+    const { error } = await session.client.auth.updateUser({
+      password: adminAuthPassword(session.email, pin),
+    });
+    setPinBusy(false);
+    if (error) {
+      setPinMessage("密码保存失败，请重新登录后再试。");
+      return;
+    }
+    setPin("");
+    setConfirmPin("");
+    setPinMessage("6位管理员密码已保存，今后无需邮件即可登录。");
+  }
+
   return (
     <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="account-sheet" role="dialog" aria-modal="true" aria-labelledby="account-title">
@@ -516,15 +679,50 @@ function AccountSheet({
         <p>{session.membership.login_id ? `登录号 ${session.membership.login_id}` : session.email}</p>
         <div className="account-sync-note"><CheckCircle size={18} weight="fill" />个人档案已启用云端隔离</div>
         {session.membership.role === "admin" && (
-          <a
-            className="account-action"
-            href="./admin.html"
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={onOpenAdmin}
-          >
-            <UsersThree size={19} />管理亲友账号
-          </a>
+          <>
+            <button className="account-action" type="button" onClick={() => { setPinOpen((open) => !open); setPinMessage(""); }}>
+              <Key size={19} />{pinOpen ? "收起密码设置" : "设置或更换6位管理员密码"}
+            </button>
+            {pinOpen && (
+              <form className="account-pin-panel" onSubmit={saveAdminPin}>
+                <label htmlFor="account-admin-pin">新6位密码</label>
+                <input
+                  id="account-admin-pin"
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="new-password"
+                  value={pin}
+                  onChange={(event) => setPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  required
+                />
+                <label htmlFor="account-admin-pin-confirm">再次输入</label>
+                <input
+                  id="account-admin-pin-confirm"
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="new-password"
+                  value={confirmPin}
+                  onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  required
+                />
+                {pinMessage && <p role="status">{pinMessage}</p>}
+                <button className="family-auth-primary" type="submit" disabled={pinBusy}>{pinBusy ? "正在保存" : "保存管理员密码"}</button>
+              </form>
+            )}
+            <a
+              className="account-action"
+              href="./admin.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={onOpenAdmin}
+            >
+              <UsersThree size={19} />管理亲友账号
+            </a>
+          </>
         )}
         <button className="account-action is-danger" type="button" onClick={onSignOut}>
           <SignOut size={19} />退出账号

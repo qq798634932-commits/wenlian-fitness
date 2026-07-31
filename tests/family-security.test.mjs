@@ -83,7 +83,7 @@ test("service worker never intercepts Supabase cross-origin requests", async () 
 
 test("auth navigations bypass stale app-shell caches", async () => {
   const serviceWorker = await readFile(serviceWorkerPath, "utf8");
-  assert.match(serviceWorker, /CACHE_NAME = "wenlian-v11"/);
+  assert.match(serviceWorker, /CACHE_NAME = "wenlian-v12"/);
   assert.match(serviceWorker, /"admin\.html"/);
   assert.match(serviceWorker, /event\.request\.mode === "navigate"/);
   assert.match(serviceWorker, /fetch\(event\.request, \{ cache: "no-store" \}\)/);
@@ -102,6 +102,25 @@ test("member sessions persist on the phone and returning login derives no stored
   assert.match(client, /memberAuthPassword/);
   assert.match(authGate, /signInWithPassword/);
   assert.match(authGate, /邀请码首次激活后，继续作为你的登录号使用/);
+});
+
+test("admin daily login uses a six-digit PIN while email remains recovery-only", async () => {
+  const client = await readFile(cloudClientPath, "utf8");
+  const authGate = await readFile(authGatePath, "utf8");
+  assert.match(client, /adminAuthPassword/);
+  assert.match(authGate, /邮箱或6位管理员密码不正确/);
+  assert.match(authGate, /auth\.signInWithPassword/);
+  assert.match(authGate, /auth\.updateUser/);
+  assert.match(authGate, /首次设置或忘记密码？使用邮件验证/);
+});
+
+test("mobile session refreshes on resume without unmounting the active workout", async () => {
+  const authGate = await readFile(authGatePath, "utf8");
+  assert.match(authGate, /event === "TOKEN_REFRESHED"/);
+  assert.match(authGate, /event === "USER_UPDATED"/);
+  assert.match(authGate, /window\.addEventListener\("pageshow", refreshOnResume\)/);
+  assert.match(authGate, /document\.addEventListener\("visibilitychange", refreshOnResume\)/);
+  assert.match(authGate, /client\.auth\.refreshSession\(\)/);
 });
 
 test("auth failures explain expired links and email cooldowns", async () => {

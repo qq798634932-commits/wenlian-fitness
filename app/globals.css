@@ -3113,6 +3113,40 @@ label.file-button:active {
   color: var(--danger);
 }
 
+.account-pin-panel {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  background: var(--page);
+  padding: 14px;
+}
+
+.account-pin-panel label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.account-pin-panel input {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 0 12px;
+  font-size: 16px;
+  letter-spacing: 0.12em;
+}
+
+.account-pin-panel p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
 .admin-shell {
   padding: max(18px, env(safe-area-inset-top)) 18px calc(30px + env(safe-area-inset-bottom));
 }

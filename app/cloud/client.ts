@@ -42,6 +42,10 @@ export function memberAuthPassword(loginId: string, pin: string) {
   return `Wl!${pin}-${normalizeMemberLoginId(loginId)}-9x`;
 }
 
+export function adminAuthPassword(email: string, pin: string) {
+  return `WlAdmin!${pin}-${email.trim().toLowerCase()}-9x`;
+}
+
 declare global {
   interface Window {
     __WENLIAN_CONFIG__?: {

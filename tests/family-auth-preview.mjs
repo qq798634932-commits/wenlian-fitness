@@ -31,6 +31,7 @@ const member = {
   created_at: "2026-07-27T01:00:00.000Z",
   updated_at: "2026-07-27T01:00:00.000Z",
 };
+let updatedAdminPassword = null;
 
 const browser = await chromium.launch({
   headless: true,
@@ -54,6 +55,24 @@ async function mockSupabase(page) {
       await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
       return;
     }
+    if (url.pathname === "/auth/v1/token") {
+      const payload = request.postDataJSON();
+      assert.equal(payload.email, admin.email);
+      assert.equal(payload.password, "WlAdmin!483920-admin@example.com-9x");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          access_token: jwt(),
+          token_type: "bearer",
+          expires_in: 3600,
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          refresh_token: "test-refresh-token",
+          user: sessionUser(),
+        }),
+      });
+      return;
+    }
     if (url.pathname === "/functions/v1/redeem-invite-code") {
       await route.fulfill({
         status: 200,
@@ -65,6 +84,12 @@ async function mockSupabase(page) {
           refreshToken: "test-refresh-token",
         }),
       });
+      return;
+    }
+    if (url.pathname === "/auth/v1/user" && request.method() === "PUT") {
+      const payload = request.postDataJSON();
+      updatedAdminPassword = payload.password;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(sessionUser()) });
       return;
     }
     if (url.pathname === "/auth/v1/user") {
@@ -161,6 +186,19 @@ await signedOutPage.getByRole("button", { name: "激活并进入" }).click();
 await signedOutPage.getByText("私人档案已同步").waitFor();
 await signedOutContext.close();
 
+const adminLoginContext = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
+const adminLoginPage = await adminLoginContext.newPage();
+await configRoute(adminLoginPage);
+await mockSupabase(adminLoginPage);
+await adminLoginPage.goto(baseUrl, { waitUntil: "networkidle" });
+await adminLoginPage.getByRole("button", { name: "管理员登录" }).click();
+await adminLoginPage.getByLabel("管理员邮箱").fill(admin.email);
+await adminLoginPage.getByLabel("6位数字密码").fill("483920");
+await adminLoginPage.getByRole("button", { name: "进入管理员账号" }).click();
+await adminLoginPage.getByText("私人档案已同步").waitFor();
+assert.equal(await adminLoginPage.evaluate(() => localStorage.getItem("wenlian-admin-email-v1")), admin.email);
+await adminLoginContext.close();
+
 const adminContext = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: "dark", serviceWorkers: "block" });
 await adminContext.addInitScript(({ token, user }) => {
   window.localStorage.setItem("sb-family-test-auth-token", JSON.stringify({
@@ -178,6 +216,12 @@ await mockSupabase(adminContext);
 await adminPage.goto(baseUrl, { waitUntil: "networkidle" });
 await adminPage.getByText("私人档案已同步").waitFor();
 await adminPage.getByRole("button", { name: "打开账号设置" }).click();
+await adminPage.getByRole("button", { name: "设置或更换6位管理员密码" }).click();
+await adminPage.getByLabel("新6位密码").fill("483920");
+await adminPage.getByLabel("再次输入").fill("483920");
+await adminPage.getByRole("button", { name: "保存管理员密码" }).click();
+await adminPage.getByText("6位管理员密码已保存，今后无需邮件即可登录。").waitFor();
+assert.equal(updatedAdminPassword, "WlAdmin!483920-admin@example.com-9x");
 const adminWindowPromise = adminContext.waitForEvent("page");
 await adminPage.getByRole("link", { name: "管理亲友账号" }).click();
 const adminWindow = await adminWindowPromise;
