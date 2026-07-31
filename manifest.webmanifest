@@ -1,0 +1,25 @@
+{
+  "name": "稳练 - 三日健身计划",
+  "short_name": "稳练",
+  "description": "个性化健身计划、完整动作库、训练音乐、身体记录与 Obsidian 导出。",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#10120f",
+  "theme_color": "#10120f",
+  "icons": [
+    {
+      "src": "./apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
